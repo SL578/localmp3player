@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="23504" systemVersion="24F74" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithSwiftData="NO" userDefinedModelVersionIdentifier="">
+    <entity name="Playlist" representedClassName="Playlist" syncable="YES">
+        <attribute name="dateCreated" optional="NO" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="name" optional="NO" attributeType="String"/>
+        <relationship name="entries" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="PlaylistEntry" inverseName="playlist" inverseEntity="PlaylistEntry"/>
+        <uniquenessConstraints>
+            <uniquenessConstraint>
+                <constraint value="id"/>
+            </uniquenessConstraint>
+        </uniquenessConstraints>
+    </entity>
+    <entity name="PlaylistEntry" representedClassName="PlaylistEntry" syncable="YES">
+        <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="position" optional="NO" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <relationship name="playlist" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Playlist" inverseName="entries" inverseEntity="Playlist"/>
+        <relationship name="song" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Song" inverseName="playlistEntries" inverseEntity="Song"/>
+        <uniquenessConstraints>
+            <uniquenessConstraint>
+                <constraint value="id"/>
+            </uniquenessConstraint>
+        </uniquenessConstraints>
+    </entity>
+    <entity name="SmartPlaylist" representedClassName="SmartPlaylist" syncable="YES">
+        <attribute name="dateCreated" optional="NO" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="matchAllTags" optional="NO" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="name" optional="NO" attributeType="String"/>
+        <attribute name="resultLimit" optional="YES" attributeType="Integer 64" usesScalarValueType="NO"/>
+        <attribute name="ruleTypeRaw" optional="NO" attributeType="String" defaultValueString="tagInclude"/>
+        <attribute name="tagIDsData" optional="YES" attributeType="Binary"/>
+        <attribute name="thresholdDays" optional="YES" attributeType="Integer 64" usesScalarValueType="NO"/>
+        <uniquenessConstraints>
+            <uniquenessConstraint>
+                <constraint value="id"/>
+            </uniquenessConstraint>
+        </uniquenessConstraints>
+    </entity>
+    <entity name="Song" representedClassName="Song" syncable="YES">
+        <attribute name="album" optional="YES" attributeType="String"/>
+        <attribute name="artist" optional="NO" attributeType="String" defaultValueString=""/>
+        <attribute name="artworkData" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES"/>
+        <attribute name="dateAdded" optional="NO" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="duration" optional="NO" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
+        <attribute name="filePath" optional="NO" attributeType="String"/>
+        <attribute name="fileSize" optional="NO" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="isLiked" optional="NO" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="lastPlayed" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="normalizedKey" optional="NO" attributeType="String" defaultValueString=""/>
+        <attribute name="originalFilename" optional="NO" attributeType="String" defaultValueString=""/>
+        <attribute name="playCount" optional="NO" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="title" optional="NO" attributeType="String" defaultValueString=""/>
+        <relationship name="playlistEntries" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="PlaylistEntry" inverseName="song" inverseEntity="PlaylistEntry"/>
+        <relationship name="tags" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="Tag" inverseName="songs" inverseEntity="Tag"/>
+        <fetchIndex name="byNormalizedKey">
+            <fetchIndexElement property="normalizedKey" type="Binary" order="ascending"/>
+        </fetchIndex>
+        <fetchIndex name="byDateAdded">
+            <fetchIndexElement property="dateAdded" type="Binary" order="descending"/>
+        </fetchIndex>
+        <fetchIndex name="byPlayCount">
+            <fetchIndexElement property="playCount" type="Binary" order="descending"/>
+        </fetchIndex>
+        <uniquenessConstraints>
+            <uniquenessConstraint>
+                <constraint value="id"/>
+            </uniquenessConstraint>
+        </uniquenessConstraints>
+    </entity>
+    <entity name="Tag" representedClassName="Tag" syncable="YES">
+        <attribute name="colorHex" optional="YES" attributeType="String"/>
+        <attribute name="displayName" optional="NO" attributeType="String" defaultValueString=""/>
+        <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="name" optional="NO" attributeType="String" defaultValueString=""/>
+        <relationship name="songs" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="Song" inverseName="tags" inverseEntity="Song"/>
+        <fetchIndex name="byName">
+            <fetchIndexElement property="name" type="Binary" order="ascending"/>
+        </fetchIndex>
+        <uniquenessConstraints>
+            <uniquenessConstraint>
+                <constraint value="name"/>
+            </uniquenessConstraint>
+        </uniquenessConstraints>
+    </entity>
+</model>
