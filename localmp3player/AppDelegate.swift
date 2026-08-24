@@ -7,6 +7,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     ) -> Bool {
         // Touch the store early so CarPlay can connect before the phone UI exists.
         _ = PersistenceController.shared
+        // Drop half-staged files from an import that never reached the library.
+        // Safe here: nothing can be staged before the first launch completes.
+        AudioFileStore.clearStaging()
         return true
     }
 }

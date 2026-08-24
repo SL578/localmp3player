@@ -4,17 +4,22 @@ import SwiftUI
 struct PlaylistsView: View {
     @Environment(\.managedObjectContext) private var context
     @Environment(\.uiMode) private var uiMode
+    @Environment(\.theme) private var theme
 
     @FetchRequest(fetchRequest: LibraryQuery.allSmartPlaylists()) private var smartPlaylists: FetchedResults<SmartPlaylist>
     @FetchRequest(fetchRequest: LibraryQuery.allPlaylists()) private var playlists: FetchedResults<Playlist>
 
     @State private var newPlaylistName = ""
     @State private var showingNewPlaylist = false
-    @State private var editingSmartPlaylist: SmartPlaylist?
+    @State private var editorTarget: SmartPlaylistEditor.Target?
+    @State private var editMode: EditMode = .inactive
+    /// One set for both kinds — playlist UUIDs don't collide across entities.
+    @State private var selection = Set<UUID>()
+    @State private var confirmingDelete = false
 
     var body: some View {
         NavigationStack {
-            List {
+            List(selection: $selection) {
                 Section("Smart Playlists") {
                     ForEach(smartPlaylists) { playlist in
                         NavigationLink {
@@ -22,20 +27,23 @@ struct PlaylistsView: View {
                         } label: {
                             SmartPlaylistRow(playlist: playlist)
                         }
+                        .tag(playlist.id)
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) { delete(playlist) } label: {
                                 Label("Delete", systemImage: "trash")
                             }
-                            Button { editingSmartPlaylist = playlist } label: {
+                            Button { editorTarget = .existing(playlist) } label: {
                                 Label("Edit", systemImage: "slider.horizontal.3")
                             }
                             .tint(.indigo)
                         }
                     }
-                    Button {
-                        editingSmartPlaylist = makeSmartPlaylist()
-                    } label: {
-                        Label("New Smart Playlist", systemImage: "wand.and.stars")
+                    if !isSelecting {
+                        Button {
+                            editorTarget = .new
+                        } label: {
+                            Label("New Smart Playlist", systemImage: "wand.and.stars")
+                        }
                     }
                 }
 
@@ -51,27 +59,94 @@ struct PlaylistsView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
+                        .tag(playlist.id)
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) { delete(playlist) } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
                     }
-                    .onDelete(perform: deletePlaylists)
-                    Button {
-                        showingNewPlaylist = true
-                    } label: {
-                        Label("New Playlist", systemImage: "plus")
+                    if !isSelecting {
+                        Button {
+                            showingNewPlaylist = true
+                        } label: {
+                            Label("New Playlist", systemImage: "plus")
+                        }
                     }
                 }
             }
             .navigationTitle("Playlists")
+            .environment(\.editMode, $editMode)
+            .toolbar { toolbarContent }
+            .safeAreaInset(edge: .bottom) {
+                if isSelecting && !selection.isEmpty {
+                    selectionBar
+                }
+            }
             .alert("New Playlist", isPresented: $showingNewPlaylist) {
                 TextField("Name", text: $newPlaylistName)
                 Button("Cancel", role: .cancel) { newPlaylistName = "" }
                 Button("Create", action: createPlaylist)
             }
-            .sheet(item: $editingSmartPlaylist) { playlist in
-                SmartPlaylistEditor(playlist: playlist)
+            .confirmationDialog(
+                "Delete \(selection.count) playlist\(selection.count == 1 ? "" : "s")?",
+                isPresented: $confirmingDelete,
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive, action: deleteSelected)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The songs themselves are not deleted.")
+            }
+            .sheet(item: $editorTarget) { target in
+                SmartPlaylistEditor(target: target)
                     .environment(\.managedObjectContext, context)
                     .environment(\.uiMode, uiMode)
             }
         }
+    }
+
+    private var isSelecting: Bool { editMode.isEditing }
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Button(isSelecting ? "Done" : "Select") {
+                withAnimation(uiMode.animation) {
+                    editMode = isSelecting ? .inactive : .active
+                }
+                selection.removeAll()
+            }
+            .disabled(smartPlaylists.isEmpty && playlists.isEmpty)
+        }
+    }
+
+    private var selectionBar: some View {
+        HStack {
+            Text("\(selection.count) selected")
+                .font(.subheadline)
+            Spacer()
+            Button(role: .destructive) {
+                confirmingDelete = true
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        .modePanelBackground(uiMode, theme: theme)
+    }
+
+    private func deleteSelected() {
+        for playlist in smartPlaylists where selection.contains(playlist.id) {
+            context.delete(playlist)
+        }
+        for playlist in playlists where selection.contains(playlist.id) {
+            context.delete(playlist)
+        }
+        selection.removeAll()
+        editMode = .inactive
+        PersistenceController.shared.save()
     }
 
     private func createPlaylist() {
@@ -85,24 +160,14 @@ struct PlaylistsView: View {
         try? context.save()
     }
 
-    private func makeSmartPlaylist() -> SmartPlaylist {
-        let playlist = SmartPlaylist(context: context)
-        playlist.id = UUID()
-        playlist.name = "New Smart Playlist"
-        playlist.dateCreated = Date()
-        playlist.ruleType = .recentlyAdded
-        playlist.resultLimitValue = 50
-        return playlist
-    }
-
     private func delete(_ playlist: SmartPlaylist) {
         context.delete(playlist)
-        try? context.save()
+        PersistenceController.shared.save()
     }
 
-    private func deletePlaylists(at offsets: IndexSet) {
-        for index in offsets { context.delete(playlists[index]) }
-        try? context.save()
+    private func delete(_ playlist: Playlist) {
+        context.delete(playlist)
+        PersistenceController.shared.save()
     }
 }
 
@@ -226,15 +291,29 @@ struct SmartPlaylistDetailView: View {
     }
 }
 
-/// Multi-select song picker used when adding to a manual playlist.
+/// Multi-select song picker, shared by manual playlists and tags.
 struct SongPickerView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
     @Environment(\.managedObjectContext) private var context
-    @FetchRequest(fetchRequest: LibraryQuery.allSongs()) private var songs: FetchedResults<Song>
+    @FetchRequest(fetchRequest: LibraryQuery.allSongs()) private var allSongs: FetchedResults<Song>
     @State private var selection = Set<UUID>()
+    @State private var searchText = ""
 
+    var title = "Add Songs"
+    /// Songs already in the destination, hidden so the list only offers new ones.
+    var excluding: Set<UUID> = []
     let onAdd: ([Song]) -> Void
+
+    private var songs: [Song] {
+        let trimmed = searchText.trimmingCharacters(in: .whitespaces)
+        return allSongs.filter { song in
+            guard !excluding.contains(song.id) else { return false }
+            guard !trimmed.isEmpty else { return true }
+            return song.title.localizedCaseInsensitiveContains(trimmed)
+                || song.artist.localizedCaseInsensitiveContains(trimmed)
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -250,8 +329,18 @@ struct SongPickerView: View {
                 }
             }
             .listStyle(.plain)
-            .navigationTitle("Add Songs")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Songs, artists")
+            .overlay {
+                if songs.isEmpty {
+                    ContentUnavailableView(
+                        searchText.isEmpty ? "Nothing to Add" : "No Matches",
+                        systemImage: "music.note",
+                        description: Text(searchText.isEmpty ? "Every song is already here." : "Try a different search.")
+                    )
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

@@ -25,15 +25,19 @@ extension View {
     /// Blanket kill-switch for implicit animations in Performance mode — covers
     /// transitions the app never names explicitly, including ones SwiftUI would
     /// start on its own for list and navigation changes.
-    @ViewBuilder
+    ///
+    /// Deliberately *not* an `if/else` returning `self` on one side. A branch in a
+    /// `@ViewBuilder` compiles to `_ConditionalContent`, and switching branches is
+    /// a change of structural identity — SwiftUI throws the subtree away and
+    /// rebuilds it with fresh `@State`. This sits at the root wrapping `RootView`,
+    /// so that reset the selected tab back to Library every time the mode changed.
+    /// One unconditional modifier keeps identity stable; only its body varies.
     func modeTransactions(_ mode: UIMode) -> some View {
-        if mode.usesAnimation {
-            self
-        } else {
-            transaction { transaction in
-                transaction.animation = nil
-                transaction.disablesAnimations = true
-            }
+        let disablesAnimation = !mode.usesAnimation
+        return transaction { transaction in
+            guard disablesAnimation else { return }
+            transaction.animation = nil
+            transaction.disablesAnimations = true
         }
     }
 

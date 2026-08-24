@@ -65,6 +65,7 @@ struct TagDetailView: View {
     @ObservedObject var tag: Tag
     @State private var selection = Set<UUID>()
     @State private var showingColorPicker = false
+    @State private var showingSongPicker = false
 
     var body: some View {
         SongListContent(
@@ -83,6 +84,12 @@ struct TagDetailView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
+                Button { showingSongPicker = true } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Add songs to this tag")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button { showingColorPicker = true } label: {
                     // Show the tag's actual color, so the button says what it does.
                     Circle()
@@ -97,6 +104,26 @@ struct TagDetailView: View {
             TagColorPicker(tag: tag)
                 .environment(\.managedObjectContext, context)
                 .environment(\.theme, theme)
+        }
+        .sheet(isPresented: $showingSongPicker) {
+            SongPickerView(
+                title: "Add to \(tag.displayName)",
+                excluding: Set(tag.songs.map(\.id))
+            ) { songs in
+                for song in songs { song.addTag(tag) }
+                PersistenceController.shared.save()
+            }
+            .environment(\.managedObjectContext, context)
+            .environment(\.theme, theme)
+        }
+        .overlay {
+            if tag.songs.isEmpty {
+                ContentUnavailableView(
+                    "No Songs",
+                    systemImage: "tag",
+                    description: Text("Tap + to add songs to this tag.")
+                )
+            }
         }
     }
 }

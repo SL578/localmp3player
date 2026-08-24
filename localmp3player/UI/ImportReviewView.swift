@@ -1,3 +1,4 @@
+import CoreData
 import SwiftUI
 
 /// Nothing is written to the library until the user confirms here.
@@ -17,7 +18,7 @@ struct ImportReviewView: View {
                             DraftSummaryRow(draft: draft)
                         }
                     }
-                    .onDelete { coordinator.drafts.remove(atOffsets: $0) }
+                    .onDelete { coordinator.removeDrafts(atOffsets: $0) }
                 } footer: {
                     Text("Titles and artists are read from the file's own tags first, then guessed from the filename. Tap any row to correct it.")
                 }
@@ -45,11 +46,13 @@ struct ImportReviewView: View {
                         coordinator.resolvePendingDuplicate(decision)
                     }
                     .environment(\.uiMode, uiMode)
-                    .presentationDetents([.medium])
                     .interactiveDismissDisabled()
                 }
             }
         }
+        // The review list and the per-song editor both live in this sheet. Without
+        // this, a downward drag while editing one song tore down the whole import.
+        .interactiveDismissDisabled()
     }
 
     private var duplicateBinding: Binding<Bool> {
@@ -69,31 +72,48 @@ private struct DraftSummaryRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                Text(draft.metadataSource.label)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                HStack(spacing: 4) {
+                    Text(draft.metadataSource.label)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    if !draft.tagNames.isEmpty {
+                        Text("· \(draft.tagNames.count) tag\(draft.tagNames.count == 1 ? "" : "s")")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
             }
         }
     }
 }
 
+/// Edits one staged file. Works on a local copy so Cancel really discards.
 struct ImportDraftEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @FetchRequest(fetchRequest: LibraryQuery.allTags()) private var existingTags: FetchedResults<Tag>
+
     @Binding var draft: ImportDraft
+    @State private var edited: ImportDraft
     @State private var tagInput = ""
+
+    init(draft: Binding<ImportDraft>) {
+        _draft = draft
+        _edited = State(initialValue: draft.wrappedValue)
+    }
 
     var body: some View {
         Form {
             Section {
-                TextField("Title", text: $draft.title)
-                TextField("Artist", text: $draft.artist)
+                TextField("Title", text: $edited.title)
+                TextField("Artist", text: $edited.artist)
                 TextField("Album", text: Binding(
-                    get: { draft.album ?? "" },
-                    set: { draft.album = $0.isEmpty ? nil : $0 }
+                    get: { edited.album ?? "" },
+                    set: { edited.album = $0.isEmpty ? nil : $0 }
                 ))
                 Button {
-                    let title = draft.title
-                    draft.title = draft.artist
-                    draft.artist = title
+                    let title = edited.title
+                    edited.title = edited.artist
+                    edited.artist = title
                 } label: {
                     Label("Swap Title and Artist", systemImage: "arrow.up.arrow.down")
                 }
@@ -102,33 +122,83 @@ struct ImportDraftEditor: View {
             } footer: {
                 Text("Filenames are read as “Artist - Title”. Use swap for files that use the other order.")
             }
+
             Section("Tags") {
-                ForEach(draft.tagNames, id: \.self) { name in
-                    Text(name)
+                ForEach(edited.tagNames, id: \.self) { name in
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(color(forTagNamed: name))
+                            .frame(width: 10, height: 10)
+                        Text(name)
+                    }
                 }
-                .onDelete { draft.tagNames.remove(atOffsets: $0) }
+                .onDelete { edited.tagNames.remove(atOffsets: $0) }
+
+                if !unusedTags.isEmpty {
+                    Menu {
+                        ForEach(unusedTags) { tag in
+                            Button {
+                                addTag(named: tag.displayName)
+                            } label: {
+                                Label(tag.displayName, systemImage: "tag")
+                            }
+                        }
+                    } label: {
+                        Label("Choose Existing Tag", systemImage: "chevron.down.circle")
+                    }
+                }
+
                 HStack {
-                    TextField("Add tag", text: $tagInput)
-                        .onSubmit(addTag)
-                    Button("Add", action: addTag)
+                    TextField("New tag", text: $tagInput)
+                        .onSubmit { addTag(named: tagInput) }
+                    Button("Add") { addTag(named: tagInput) }
                         .disabled(tagInput.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
+
             Section("Source") {
-                LabeledContent("File", value: draft.originalFilename)
-                LabeledContent("Length", value: TimeFormatting.duration(draft.duration))
-                LabeledContent("Read from", value: draft.metadataSource.label)
+                LabeledContent("File", value: edited.originalFilename)
+                LabeledContent("Length", value: TimeFormatting.duration(edited.duration))
+                LabeledContent("Read from", value: edited.metadataSource.label)
             }
         }
         .navigationTitle("Edit")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { dismiss() }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done") {
+                    draft = edited
+                    dismiss()
+                }
+                .disabled(edited.title.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
     }
 
-    private func addTag() {
-        let trimmed = tagInput.trimmingCharacters(in: .whitespaces)
+    /// Existing tags not already on this draft, matched case-insensitively so the
+    /// menu never offers a tag the user has effectively already added.
+    private var unusedTags: [Tag] {
+        existingTags.filter { tag in
+            !edited.tagNames.contains { $0.caseInsensitiveCompare(tag.displayName) == .orderedSame }
+        }
+    }
+
+    private func color(forTagNamed name: String) -> Color {
+        let hex = existingTags
+            .first { $0.name == Tag.canonical(name) }?
+            .colorHex ?? TagPalette.suggestedHex(for: Tag.canonical(name))
+        return Color(hex: hex) ?? .gray
+    }
+
+    private func addTag(named raw: String) {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
-        if !draft.tagNames.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) {
-            draft.tagNames.append(trimmed)
+        if !edited.tagNames.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            edited.tagNames.append(trimmed)
         }
         tagInput = ""
     }
@@ -139,14 +209,24 @@ struct DuplicateResolutionView: View {
     let existing: Song
     let onDecide: (DuplicateDecision) -> Void
 
+    /// Drives a detent sized to the content, so the sheet rises only as far as it
+    /// needs to and the heading sits at the top instead of floating mid-panel.
+    @State private var contentHeight: CGFloat = 360
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Possible Duplicate")
-                    .font(.headline)
-                Text("\(draft.title) — \(draft.artist) already looks like it's in your library.")
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Possible Duplicate")
+                        .font(.headline)
+                    Text("\(draft.title) — \(draft.artist) already looks like it's in your library.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                Button("Cancel") { onDecide(.cancel) }
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
             }
 
             HStack(spacing: 16) {
@@ -164,18 +244,52 @@ struct DuplicateResolutionView: View {
                 )
             }
 
-            VStack(spacing: 8) {
-                Button("Replace") { onDecide(DuplicateDecision(choice: .replace, applyToRest: false)) }
+            VStack(spacing: 10) {
+                // The two real choices get equal width and full height, so they are
+                // the easiest things on the panel to hit.
+                HStack(spacing: 10) {
+                    // The width goes on the *label*, so the filled shape itself
+                    // stretches — on the button it would only pad around a
+                    // content-sized capsule and stay small.
+                    Button {
+                        onDecide(DuplicateDecision(choice: .replace, applyToRest: false))
+                    } label: {
+                        Text("Replace").frame(maxWidth: .infinity)
+                    }
                     .buttonStyle(.borderedProminent)
-                Button("Keep Both") { onDecide(DuplicateDecision(choice: .keepBoth, applyToRest: false)) }
+
+                    Button {
+                        onDecide(DuplicateDecision(choice: .keepBoth, applyToRest: false))
+                    } label: {
+                        Text("Keep Both").frame(maxWidth: .infinity)
+                    }
                     .buttonStyle(.bordered)
-                Button("Replace All Remaining") { onDecide(DuplicateDecision(choice: .replace, applyToRest: true)) }
-                    .buttonStyle(.borderless)
-                    .font(.footnote)
+                }
+                .controlSize(.large)
+
+                Button("Replace All Remaining") {
+                    onDecide(DuplicateDecision(choice: .replace, applyToRest: true))
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .font(.footnote)
             }
             .frame(maxWidth: .infinity)
         }
         .padding()
+        .background(heightReader)
+        .onPreferenceChange(ContentHeightKey.self) { height in
+            guard height > 0 else { return }
+            contentHeight = height
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
+        .presentationDetents([.height(contentHeight)])
+    }
+
+    private var heightReader: some View {
+        GeometryReader { proxy in
+            Color.clear.preference(key: ContentHeightKey.self, value: proxy.size.height)
+        }
     }
 
     private func comparisonColumn(heading: String, artwork: Data?, length: Double, detail: String) -> some View {
@@ -192,5 +306,12 @@ struct DuplicateResolutionView: View {
                 .lineLimit(2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct ContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

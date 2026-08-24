@@ -14,6 +14,8 @@ struct LibraryView: View {
     @State private var isSelecting = false
     @State private var showingPicker = false
     @State private var showingBatchTags = false
+    @State private var showingPlaylistPicker = false
+    @State private var confirmingDelete = false
 
     var body: some View {
         NavigationStack {
@@ -52,9 +54,24 @@ struct LibraryView: View {
                 .environment(\.uiMode, uiMode)
         }
         .sheet(isPresented: $showingBatchTags) {
-            BatchTagEditor(songIDs: selection) { selection.removeAll(); isSelecting = false }
+            BatchTagEditor(songIDs: selection) { endSelection() }
                 .environment(\.managedObjectContext, context)
                 .environment(\.uiMode, uiMode)
+        }
+        .sheet(isPresented: $showingPlaylistPicker) {
+            PlaylistPickerView(songs: selectedSongs()) { endSelection() }
+                .environment(\.managedObjectContext, context)
+                .environment(\.uiMode, uiMode)
+        }
+        .confirmationDialog(
+            "Delete \(selection.count) song\(selection.count == 1 ? "" : "s")?",
+            isPresented: $confirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive, action: deleteSelected)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The imported files are removed from the app for good.")
         }
         .overlay(alignment: .center) {
             if case .scanning(let done, let total) = importCoordinator.phase {
@@ -87,6 +104,16 @@ struct LibraryView: View {
                 if !isSelecting { selection.removeAll() }
             }
         }
+        if isSelecting {
+            ToolbarItem(placement: .topBarLeading) {
+                let visible = currentSongs()
+                let allSelected = !visible.isEmpty && selection.count == visible.count
+                Button(allSelected ? "None" : "All") {
+                    selection = allSelected ? [] : Set(visible.map(\.id))
+                }
+                .disabled(visible.isEmpty)
+            }
+        }
         ToolbarItem(placement: .topBarTrailing) {
             ShufflePlayButton(sourceName: "Library", songs: currentSongs)
         }
@@ -98,8 +125,11 @@ struct LibraryView: View {
                     }
                 }
             } label: {
-                Label("Sort", systemImage: "arrow.up.arrow.down")
+                // A `Label` here renders with no glyph at all — the control stays
+                // tappable but invisible. A bare `Image` draws reliably.
+                Image(systemName: "arrow.up.arrow.down")
             }
+            .accessibilityLabel("Sort")
         }
         ToolbarItem(placement: .topBarTrailing) {
             Button {
@@ -111,19 +141,144 @@ struct LibraryView: View {
     }
 
     private var selectionBar: some View {
-        HStack {
+        HStack(spacing: 4) {
             Text("\(selection.count) selected")
                 .font(.subheadline)
-            Spacer()
-            Button {
-                showingBatchTags = true
-            } label: {
-                Label("Tags", systemImage: "tag")
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            action("Tag", systemImage: "tag") { showingBatchTags = true }
+            action("Add to Playlist", systemImage: "text.badge.plus") { showingPlaylistPicker = true }
+            action(allSelectionLiked ? "Unlike" : "Like",
+                   systemImage: allSelectionLiked ? "heart.slash" : "heart") {
+                setLiked(!allSelectionLiked)
             }
+            action("Delete", systemImage: "trash", role: .destructive) { confirmingDelete = true }
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
         .modePanelBackground(uiMode, theme: theme)
+    }
+
+    private func action(
+        _ title: String,
+        systemImage: String,
+        role: ButtonRole? = nil,
+        perform: @escaping () -> Void
+    ) -> some View {
+        Button(role: role, action: perform) {
+            Label(title, systemImage: systemImage)
+                .labelStyle(.iconOnly)
+                .frame(width: 44, height: 30)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(title)
+    }
+
+    /// The songs behind the current selection, in the list's own order.
+    private func selectedSongs() -> [Song] {
+        currentSongs().filter { selection.contains($0.id) }
+    }
+
+    private var allSelectionLiked: Bool {
+        let songs = selectedSongs()
+        return !songs.isEmpty && songs.allSatisfy(\.isLiked)
+    }
+
+    private func setLiked(_ liked: Bool) {
+        for song in selectedSongs() { song.isLiked = liked }
+        PersistenceController.shared.save()
+    }
+
+    private func deleteSelected() {
+        for song in selectedSongs() {
+            playback.forget(song)
+            AudioFileStore.delete(relativePath: song.filePath)
+            context.delete(song)
+        }
+        endSelection()
+        PersistenceController.shared.save()
+    }
+
+    private func endSelection() {
+        selection.removeAll()
+        isSelecting = false
+    }
+}
+
+/// Adds a multi-selection to one manual playlist.
+struct PlaylistPickerView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.managedObjectContext) private var context
+    @FetchRequest(fetchRequest: LibraryQuery.allPlaylists()) private var playlists: FetchedResults<Playlist>
+
+    let songs: [Song]
+    let onFinish: () -> Void
+
+    @State private var newPlaylistName = ""
+    @State private var showingNewPlaylist = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Button {
+                        showingNewPlaylist = true
+                    } label: {
+                        Label("New Playlist", systemImage: "plus")
+                    }
+                }
+                Section("Playlists") {
+                    if playlists.isEmpty {
+                        Text("No playlists yet.").foregroundStyle(.secondary)
+                    }
+                    ForEach(playlists) { playlist in
+                        Button {
+                            add(to: playlist)
+                        } label: {
+                            HStack {
+                                Text(playlist.name)
+                                Spacer()
+                                Text("\(playlist.entries.count)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .contentShape(Rectangle())
+                    }
+                }
+            }
+            .navigationTitle("Add \(songs.count) Song\(songs.count == 1 ? "" : "s")")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .alert("New Playlist", isPresented: $showingNewPlaylist) {
+                TextField("Name", text: $newPlaylistName)
+                Button("Cancel", role: .cancel) { newPlaylistName = "" }
+                Button("Create") { createAndAdd() }
+            }
+        }
+    }
+
+    private func add(to playlist: Playlist) {
+        for song in songs { playlist.append(song) }
+        PersistenceController.shared.save()
+        onFinish()
+        dismiss()
+    }
+
+    private func createAndAdd() {
+        let trimmed = newPlaylistName.trimmingCharacters(in: .whitespaces)
+        newPlaylistName = ""
+        guard !trimmed.isEmpty else { return }
+        let playlist = Playlist(context: context)
+        playlist.id = UUID()
+        playlist.name = trimmed
+        playlist.dateCreated = Date()
+        add(to: playlist)
     }
 }
 
@@ -253,11 +408,7 @@ struct TagChipRow: View {
     var body: some View {
         HStack(spacing: 4) {
             ForEach(tags.prefix(4)) { tag in
-                Text(tag.displayName)
-                    .font(.caption2)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
-                    .background((Color(hex: tag.colorHex) ?? .gray).opacity(0.25), in: Capsule())
+                TagChip(tag: tag)
             }
             if tags.count > 4 {
                 Text("+\(tags.count - 4)")
@@ -265,6 +416,22 @@ struct TagChipRow: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+/// One chip, observing its own `Tag`. Reading `tag.colorHex` in the parent
+/// instead left recolouring invisible until relaunch: the enclosing `SongRow`
+/// observes the *Song*, and recolouring a tag never touches the song, so
+/// nothing in that chain invalidated the row.
+private struct TagChip: View {
+    @ObservedObject var tag: Tag
+
+    var body: some View {
+        Text(tag.displayName)
+            .font(.caption2)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background((Color(hex: tag.colorHex) ?? .gray).opacity(0.25), in: Capsule())
     }
 }
 
