@@ -1,5 +1,6 @@
 import Combine
 import SwiftUI
+import UIKit
 
 enum UIMode: String, CaseIterable, Identifiable {
     case standard
@@ -43,6 +44,20 @@ enum UIMode: String, CaseIterable, Identifiable {
     var usesAnimation: Bool { self == .standard }
 
     var usesMaterials: Bool { self == .standard }
+}
+
+/// Performance mode's reach into UIKit.
+///
+/// SwiftUI transactions only govern SwiftUI's own implicit animations. Navigation
+/// pushes, sheet presentations and list edit-mode transitions are run by UIKit
+/// underneath and ignore them completely, which is why tapping into a song or a
+/// playlist still slid in with the animation switch off. This is the one lever
+/// that covers those.
+@MainActor
+enum MotionControl {
+    static func apply(_ mode: UIMode) {
+        UIView.setAnimationsEnabled(mode.usesAnimation)
+    }
 }
 
 private struct UIModeKey: EnvironmentKey {

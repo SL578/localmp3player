@@ -59,7 +59,7 @@ struct SmartPlaylistEditor: View {
                             .pickerStyle(.segmented)
                         }
                         if tags.isEmpty {
-                            Text("No tags yet.").foregroundStyle(.secondary)
+                            Text("No tags yet.").secondaryText()
                         }
                         ForEach(tags) { tag in
                             Button {

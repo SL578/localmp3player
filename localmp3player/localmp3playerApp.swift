@@ -37,12 +37,22 @@ private struct ThemedRoot: View {
         RootView()
             .environment(\.theme, palette)
             .tint(palette.accent)
-            .foregroundStyle(palette.primaryText, palette.secondaryText)
+            // Primary only. Passing a secondary style here also repainted control
+            // chrome and SF Symbol second layers with it, which made Steppers and
+            // `play.circle.fill` look disabled. Secondary text goes through
+            // `.secondaryText()`, which stays scoped to text.
+            .foregroundStyle(palette.primaryText)
+            .symbolRenderingMode(.monochrome)
             .background(palette.background)
             .modeTransactions(uiMode)
+            .onAppear { MotionControl.apply(uiMode) }
+            .onChange(of: uiMode) { _, mode in MotionControl.apply(mode) }
             .onChange(of: scenePhase) { _, phase in
                 // Catch a day/night boundary crossed while the app was backgrounded.
-                if phase == .active { theme.refreshDynamicScheme() }
+                if phase == .active {
+                    theme.refreshDynamicScheme()
+                    MotionControl.apply(uiMode)
+                }
             }
     }
 }

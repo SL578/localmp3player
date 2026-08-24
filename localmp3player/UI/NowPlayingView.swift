@@ -15,7 +15,7 @@ struct MiniPlayerBar: View {
                     .lineLimit(1)
                 Text(playback.currentSong?.artist ?? "")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .secondaryText()
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
@@ -23,12 +23,14 @@ struct MiniPlayerBar: View {
                 Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
                     .font(.title3)
                     .frame(width: 32, height: 32)
+                    .foregroundStyle(theme.primaryText)
             }
             .buttonStyle(.plain)
             Button { playback.next() } label: {
                 Image(systemName: "forward.fill")
                     .font(.title3)
                     .frame(width: 32, height: 32)
+                    .foregroundStyle(theme.primaryText)
             }
             .buttonStyle(.plain)
         }
@@ -95,11 +97,11 @@ struct NowPlayingView: View {
                 .font(.title3.weight(.semibold))
                 .multilineTextAlignment(.center)
             Text(playback.currentSong?.artist ?? "")
-                .foregroundStyle(.secondary)
+                .secondaryText()
             if let source = playback.queueSourceName {
                 Text("Playing from \(source)")
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .tertiaryText()
             }
         }
     }
@@ -123,21 +125,28 @@ struct NowPlayingView: View {
                 Text(TimeFormatting.duration(playback.duration))
             }
             .font(.caption.monospacedDigit())
-            .foregroundStyle(.secondary)
+            .secondaryText()
         }
     }
 
     private var transportControls: some View {
+        // Colours are explicit: `.buttonStyle(.plain)` opts out of the tint, so
+        // anything left unstyled falls back to the inherited foreground styles.
         HStack(spacing: 40) {
             Button { playback.previous() } label: {
-                Image(systemName: "backward.fill").font(.title)
+                Image(systemName: "backward.fill")
+                    .font(.title)
+                    .foregroundStyle(theme.primaryText)
             }
             Button { playback.togglePlayPause() } label: {
                 Image(systemName: playback.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 62))
+                    .foregroundStyle(theme.accent)
             }
             Button { playback.next() } label: {
-                Image(systemName: "forward.fill").font(.title)
+                Image(systemName: "forward.fill")
+                    .font(.title)
+                    .foregroundStyle(theme.primaryText)
             }
         }
         .buttonStyle(.plain)
@@ -183,7 +192,7 @@ struct NowPlayingView: View {
                 Spacer()
                 Text("\(playback.queue.count) songs")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .secondaryText()
             }
 
             ForEach(Array(playback.queue.enumerated()), id: \.element.id) { index, song in
@@ -199,7 +208,7 @@ struct NowPlayingView: View {
                         } else {
                             Text("\(index + 1)")
                                 .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
+                                .secondaryText()
                                 .frame(width: 16)
                         }
                         VStack(alignment: .leading, spacing: 1) {
@@ -207,13 +216,13 @@ struct NowPlayingView: View {
                                 .lineLimit(1)
                             Text(song.artist)
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .secondaryText()
                                 .lineLimit(1)
                         }
                         Spacer(minLength: 4)
                         Text(TimeFormatting.duration(song.duration))
                             .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                            .secondaryText()
                     }
                     .padding(.vertical, 6)
                     .contentShape(Rectangle())

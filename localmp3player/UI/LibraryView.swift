@@ -108,7 +108,7 @@ struct LibraryView: View {
             ToolbarItem(placement: .topBarLeading) {
                 let visible = currentSongs()
                 let allSelected = !visible.isEmpty && selection.count == visible.count
-                Button(allSelected ? "None" : "All") {
+                Button(allSelected ? "Select None" : "Select All") {
                     selection = allSelected ? [] : Set(visible.map(\.id))
                 }
                 .disabled(visible.isEmpty)
@@ -229,7 +229,7 @@ struct PlaylistPickerView: View {
                 }
                 Section("Playlists") {
                     if playlists.isEmpty {
-                        Text("No playlists yet.").foregroundStyle(.secondary)
+                        Text("No playlists yet.").secondaryText()
                     }
                     ForEach(playlists) { playlist in
                         Button {
@@ -240,7 +240,7 @@ struct PlaylistPickerView: View {
                                 Spacer()
                                 Text("\(playlist.entries.count)")
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .secondaryText()
                             }
                         }
                         .buttonStyle(.plain)
@@ -287,6 +287,7 @@ struct PlaylistPickerView: View {
 struct SongListContent: View {
     @Environment(\.managedObjectContext) private var context
     @Environment(\.theme) private var theme
+    @Environment(\.uiMode) private var uiMode
     @EnvironmentObject private var playback: PlaybackController
 
     @FetchRequest private var songs: FetchedResults<Song>
@@ -351,7 +352,13 @@ struct SongListContent: View {
         playback.play(songs: visibleSongs, startingAt: index, sourceName: sourceName)
         // Land on the player for this list, rather than leaving the user to hunt
         // for the mini bar.
-        showingPlayer = true
+        pushPlayer()
+    }
+
+    private func pushPlayer() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = !uiMode.usesAnimation
+        withTransaction(transaction) { showingPlayer = true }
     }
 
     private func delete(_ song: Song) {
@@ -381,7 +388,7 @@ struct SongRow: View {
                 HStack(spacing: 6) {
                     Text(song.subtitle)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .secondaryText()
                         .lineLimit(1)
                     if song.isLiked {
                         Image(systemName: "heart.fill")
@@ -396,7 +403,7 @@ struct SongRow: View {
             Spacer(minLength: 4)
             Text(TimeFormatting.duration(song.duration))
                 .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+                .secondaryText()
         }
         .padding(.vertical, 2)
     }
@@ -413,7 +420,7 @@ struct TagChipRow: View {
             if tags.count > 4 {
                 Text("+\(tags.count - 4)")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .secondaryText()
             }
         }
     }
@@ -497,7 +504,7 @@ struct ScanningOverlay: View {
                 .frame(width: 160)
             Text("Reading \(completed) of \(total)")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .secondaryText()
         }
         .padding(20)
         .modeCard(uiMode, theme: theme)

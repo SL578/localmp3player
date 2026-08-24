@@ -82,6 +82,27 @@ extension View {
     }
 }
 
+/// Secondary/tertiary text that follows the user's own palette.
+///
+/// These exist so the app never has to set a global *secondary* foreground style.
+/// That style is not text-only: SwiftUI also paints control chrome with it — a
+/// Stepper's +/- background came out in the secondary colour and read as
+/// disabled — and SF Symbols use it for their second layer. Scoping it to text
+/// keeps the user's colour choice working without repainting controls.
+private struct ThemedTextStyle: ViewModifier {
+    @Environment(\.theme) private var theme
+    let opacity: Double
+
+    func body(content: Content) -> some View {
+        content.foregroundStyle(theme.secondaryText.opacity(opacity))
+    }
+}
+
+extension View {
+    func secondaryText() -> some View { modifier(ThemedTextStyle(opacity: 1)) }
+    func tertiaryText() -> some View { modifier(ThemedTextStyle(opacity: 0.6)) }
+}
+
 extension Color {
     init?(hex: String?) {
         guard let hex, hex.count == 6, let value = UInt32(hex, radix: 16) else { return nil }

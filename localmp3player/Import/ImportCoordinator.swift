@@ -62,6 +62,7 @@ final class ImportCoordinator: ObservableObject {
 
     private let context: NSManagedObjectContext
     private var batchReplaceAll = false
+    private var batchKeepAll = false
     private var duplicateContinuation: CheckedContinuation<DuplicateDecision, Never>?
 
     init(context: NSManagedObjectContext) {
@@ -75,6 +76,7 @@ final class ImportCoordinator: ObservableObject {
     func stage(urls: [URL]) async {
         guard !urls.isEmpty else { return }
         batchReplaceAll = false
+        batchKeepAll = false
         discardAllStaged()
         drafts = []
         phase = .scanning(completed: 0, total: urls.count)
@@ -132,6 +134,8 @@ final class ImportCoordinator: ObservableObject {
 
     func cancelReview() {
         discardAllStaged()
+        batchReplaceAll = false
+        batchKeepAll = false
         drafts = []
         stagingFailureCount = 0
         phase = .idle
@@ -179,6 +183,7 @@ final class ImportCoordinator: ObservableObject {
         drafts = []
         phase = .idle
         batchReplaceAll = false
+        batchKeepAll = false
         stagingFailureCount = 0
         lastImportSummary = summary(imported: imported, replaced: replaced, failed: failed, cancelled: cancelled)
     }
@@ -194,6 +199,7 @@ final class ImportCoordinator: ObservableObject {
         guard let existing = try? context.fetch(request).first else { return .insert }
 
         if batchReplaceAll { return .replace(existing) }
+        if batchKeepAll { return .insert }
 
         let decision = await withCheckedContinuation { continuation in
             duplicateContinuation = continuation
@@ -202,8 +208,12 @@ final class ImportCoordinator: ObservableObject {
         pendingDuplicate = nil
 
         if decision.choice == .cancelImport { return .cancel }
-        if decision.applyToRest && decision.choice == .replace {
-            batchReplaceAll = true
+        if decision.applyToRest {
+            switch decision.choice {
+            case .replace: batchReplaceAll = true
+            case .keepBoth: batchKeepAll = true
+            case .cancelImport: break
+            }
         }
         return decision.choice == .replace ? .replace(existing) : .insert
     }

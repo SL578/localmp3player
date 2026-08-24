@@ -16,14 +16,16 @@ struct PlaylistsView: View {
     /// One set for both kinds — playlist UUIDs don't collide across entities.
     @State private var selection = Set<UUID>()
     @State private var confirmingDelete = false
+    @State private var smartTarget: SmartPlaylist?
+    @State private var manualTarget: Playlist?
 
     var body: some View {
         NavigationStack {
             List(selection: $selection) {
                 Section("Smart Playlists") {
                     ForEach(smartPlaylists) { playlist in
-                        NavigationLink {
-                            SmartPlaylistDetailView(playlist: playlist)
+                        DisclosureRow(isSelecting: isSelecting) {
+                            navigate { smartTarget = playlist }
                         } label: {
                             SmartPlaylistRow(playlist: playlist)
                         }
@@ -49,14 +51,14 @@ struct PlaylistsView: View {
 
                 Section("Playlists") {
                     ForEach(playlists) { playlist in
-                        NavigationLink {
-                            PlaylistDetailView(playlist: playlist)
+                        DisclosureRow(isSelecting: isSelecting) {
+                            navigate { manualTarget = playlist }
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(playlist.name)
                                 Text("\(playlist.entries.count) songs")
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .secondaryText()
                             }
                         }
                         .tag(playlist.id)
@@ -76,6 +78,8 @@ struct PlaylistsView: View {
                 }
             }
             .navigationTitle("Playlists")
+            .navigationDestination(item: $smartTarget) { SmartPlaylistDetailView(playlist: $0) }
+            .navigationDestination(item: $manualTarget) { PlaylistDetailView(playlist: $0) }
             .environment(\.editMode, $editMode)
             .toolbar { toolbarContent }
             .safeAreaInset(edge: .bottom) {
@@ -107,6 +111,13 @@ struct PlaylistsView: View {
     }
 
     private var isSelecting: Bool { editMode.isEditing }
+
+    /// Performance mode pushes without a transition.
+    private func navigate(_ action: () -> Void) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = !uiMode.usesAnimation
+        withTransaction(transaction, action)
+    }
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
@@ -171,6 +182,38 @@ struct PlaylistsView: View {
     }
 }
 
+/// A list row that looks like a `NavigationLink` but drives navigation itself.
+///
+/// `NavigationLink` inside a `List` puts the row into UIKit's *selected* state and
+/// relies on the pop to clear it. `RootView` keeps every tab alive behind an
+/// opacity change rather than removing it, so a tab switch stranded that pending
+/// deselect and the row stayed grey — still tappable, just permanently
+/// highlighted. Owning the tap keeps rows stateless, and lets the caller decide
+/// whether the push animates.
+struct DisclosureRow<Label: View>: View {
+    @Environment(\.theme) private var theme
+
+    let isSelecting: Bool
+    let action: () -> Void
+    @ViewBuilder let label: Label
+
+    var body: some View {
+        Button(action: { if !isSelecting { action() } }) {
+            HStack(spacing: 8) {
+                label
+                Spacer(minLength: 4)
+                if !isSelecting {
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(theme.separator)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 struct SmartPlaylistRow: View {
     @ObservedObject var playlist: SmartPlaylist
 
@@ -183,7 +226,7 @@ struct SmartPlaylistRow: View {
                 Text(playlist.name)
                 Text(playlist.ruleSummary)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .secondaryText()
             }
         }
     }
@@ -247,7 +290,9 @@ struct PlaylistDetailView: View {
         playback.play(songs: songs, startingAt: index, sourceName: playlist.name)
         // Push the player for this playlist so the queue on screen is the
         // playlist's songs and nothing else.
-        showingPlayer = true
+        var transaction = Transaction()
+        transaction.disablesAnimations = !uiMode.usesAnimation
+        withTransaction(transaction) { showingPlayer = true }
     }
 
     private func move(from offsets: IndexSet, to destination: Int) {

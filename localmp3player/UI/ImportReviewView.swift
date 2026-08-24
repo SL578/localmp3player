@@ -70,16 +70,16 @@ private struct DraftSummaryRow: View {
                 Text(draft.title).lineLimit(1)
                 Text(draft.artist)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .secondaryText()
                     .lineLimit(1)
                 HStack(spacing: 4) {
                     Text(draft.metadataSource.label)
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .tertiaryText()
                     if !draft.tagNames.isEmpty {
                         Text("· \(draft.tagNames.count) tag\(draft.tagNames.count == 1 ? "" : "s")")
                             .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                            .tertiaryText()
                     }
                 }
             }
@@ -215,18 +215,20 @@ struct DuplicateResolutionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Possible Duplicate")
-                        .font(.headline)
-                    Text("\(draft.title) — \(draft.artist) already looks like it's in your library.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 12)
+            // Cancel gets its own row on the left, matching every other sheet in
+            // the app and giving the heading room to breathe below it.
+            HStack {
                 Button("Cancel") { onDecide(.cancel) }
+                Spacer()
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Possible Duplicate")
+                    .font(.headline)
+                Text("\(draft.title) — \(draft.artist) already looks like it's in your library.")
                     .font(.subheadline)
+                    .secondaryText()
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             HStack(spacing: 16) {
@@ -267,16 +269,33 @@ struct DuplicateResolutionView: View {
                 }
                 .controlSize(.large)
 
-                Button("Replace All Remaining") {
-                    onDecide(DuplicateDecision(choice: .replace, applyToRest: true))
+                // Batch escapes for both choices, kept visually subordinate to
+                // the two single-song decisions above.
+                HStack(spacing: 10) {
+                    Button {
+                        onDecide(DuplicateDecision(choice: .replace, applyToRest: true))
+                    } label: {
+                        Text("Replace All Remaining")
+                            .frame(maxWidth: .infinity, minHeight: 34)
+                            .contentShape(Rectangle())
+                    }
+
+                    Button {
+                        onDecide(DuplicateDecision(choice: .keepBoth, applyToRest: true))
+                    } label: {
+                        Text("Keep All Remaining")
+                            .frame(maxWidth: .infinity, minHeight: 34)
+                            .contentShape(Rectangle())
+                    }
                 }
                 .buttonStyle(.borderless)
-                .controlSize(.small)
                 .font(.footnote)
             }
             .frame(maxWidth: .infinity)
         }
         .padding()
+        .padding(.top, 4)
+        .padding(.bottom, 20)
         .background(heightReader)
         .onPreferenceChange(ContentHeightKey.self) { height in
             guard height > 0 else { return }
@@ -296,13 +315,13 @@ struct DuplicateResolutionView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(heading)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .secondaryText()
             ArtworkThumbnail(data: artwork, size: 56)
             Text(TimeFormatting.duration(length))
                 .font(.caption.monospacedDigit())
             Text(detail)
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .tertiaryText()
                 .lineLimit(2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

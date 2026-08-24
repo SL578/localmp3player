@@ -3,17 +3,19 @@ import SwiftUI
 
 struct TagsView: View {
     @Environment(\.managedObjectContext) private var context
+    @Environment(\.uiMode) private var uiMode
     @FetchRequest(fetchRequest: LibraryQuery.allTags()) private var tags: FetchedResults<Tag>
 
     @State private var newTagName = ""
     @State private var showingNewTag = false
+    @State private var target: Tag?
 
     var body: some View {
         NavigationStack {
             List {
                 ForEach(tags) { tag in
-                    NavigationLink {
-                        TagDetailView(tag: tag)
+                    DisclosureRow(isSelecting: false) {
+                        navigate { target = tag }
                     } label: {
                         HStack(spacing: 10) {
                             Circle()
@@ -23,13 +25,14 @@ struct TagsView: View {
                             Spacer()
                             Text("\(tag.songs.count)")
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .secondaryText()
                         }
                     }
                 }
                 .onDelete(perform: delete)
             }
             .navigationTitle("Tags")
+            .navigationDestination(item: $target) { TagDetailView(tag: $0) }
             .overlay {
                 if tags.isEmpty {
                     ContentUnavailableView("No Tags", systemImage: "tag", description: Text("Tags let you build smart playlists and browse quickly in CarPlay."))
@@ -52,9 +55,16 @@ struct TagsView: View {
         }
     }
 
+    /// Performance mode pushes without a transition.
+    private func navigate(_ action: () -> Void) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = !uiMode.usesAnimation
+        withTransaction(transaction, action)
+    }
+
     private func delete(at offsets: IndexSet) {
         for index in offsets { context.delete(tags[index]) }
-        try? context.save()
+        PersistenceController.shared.save()
     }
 }
 
@@ -230,12 +240,13 @@ struct BatchTagEditor: View {
     let onFinish: () -> Void
 
     @State private var newTagName = ""
-
-    private var songs: [Song] {
-        let request = Song.fetchRequest()
-        request.predicate = NSPredicate(format: "id IN %@", Array(songIDs))
-        return LibraryQuery.fetch(request, in: context)
-    }
+    @State private var songs: [Song] = []
+    /// Coverage per tag, held explicitly rather than recomputed from the songs on
+    /// every redraw. Editing a relationship doesn't reliably republish the tag
+    /// fetch, so the derived version only refreshed for whichever tag happened to
+    /// invalidate the view first — later toggles applied to the store but showed
+    /// no change until the sheet was reopened.
+    @State private var coverage: [UUID: Coverage] = [:]
 
     var body: some View {
         NavigationStack {
@@ -254,7 +265,7 @@ struct BatchTagEditor: View {
                 }
                 Section("Tags") {
                     ForEach(tags) { tag in
-                        let state = coverage(of: tag)
+                        let state = coverage[tag.id] ?? .absent
                         HStack {
                             Circle()
                                 .fill(Color(hex: tag.colorHex) ?? .gray)
@@ -262,7 +273,7 @@ struct BatchTagEditor: View {
                             Text(tag.displayName)
                             Spacer()
                             Image(systemName: state.symbol)
-                                .foregroundStyle(state == .none ? theme.secondaryText : theme.accent)
+                                .foregroundStyle(state == .absent ? theme.secondaryText : theme.accent)
                         }
                         .contentShape(Rectangle())
                         .onTapGesture { apply(tag, add: state != .all) }
@@ -274,37 +285,50 @@ struct BatchTagEditor: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
-                        try? context.save()
+                        PersistenceController.shared.save()
                         onFinish()
                         dismiss()
                     }
                 }
             }
+            .onAppear(perform: loadSongs)
         }
     }
 
+    /// Cases are deliberately not named `none`/`some`: those collide with
+    /// `Optional`'s own cases and make `coverage[id] ?? .none` ambiguous.
     private enum Coverage {
-        case none, some, all
+        case absent, partial, all
 
         var symbol: String {
             switch self {
-            case .none: return "circle"
-            case .some: return "minus.circle.fill"
+            case .absent: return "circle"
+            case .partial: return "minus.circle.fill"
             case .all: return "checkmark.circle.fill"
             }
         }
     }
 
-    private func coverage(of tag: Tag) -> Coverage {
+    private func loadSongs() {
+        let request = Song.fetchRequest()
+        request.predicate = NSPredicate(format: "id IN %@", Array(songIDs))
+        songs = LibraryQuery.fetch(request, in: context)
+        coverage = Dictionary(uniqueKeysWithValues: tags.map { ($0.id, measure($0)) })
+    }
+
+    private func measure(_ tag: Tag) -> Coverage {
         let matching = songs.filter { $0.tags.contains(tag) }.count
-        if matching == 0 { return .none }
-        return matching == songs.count ? .all : .some
+        if matching == 0 { return .absent }
+        return matching == songs.count ? .all : .partial
     }
 
     private func apply(_ tag: Tag, add: Bool) {
         for song in songs {
             if add { song.addTag(tag) } else { song.removeTag(tag) }
         }
+        // Update the row from the action we just performed, so every tag responds
+        // on the first tap regardless of what Core Data chooses to republish.
+        coverage[tag.id] = add ? .all : .absent
     }
 }
 
