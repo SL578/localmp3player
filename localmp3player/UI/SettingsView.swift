@@ -1,6 +1,14 @@
 import CoreData
 import SwiftUI
 
+/// Every screen Settings can push. Pushing by value rather than by destination
+/// view is what lets `RootView` clear the stack: a `NavigationLink` that carries
+/// its own destination pushes through private state the `path` binding never
+/// sees, so emptying the path left the pushed screen exactly where it was.
+enum SettingsRoute: Hashable {
+    case colors
+}
+
 struct SettingsView: View {
     @Environment(\.managedObjectContext) private var context
     @Environment(\.theme) private var theme
@@ -9,9 +17,15 @@ struct SettingsView: View {
 
     @FetchRequest(fetchRequest: LibraryQuery.allSongs()) private var songs: FetchedResults<Song>
 
+    /// Owned by RootView so it can be reset when this tab is left, since this
+    /// pane never actually disappears to reset itself.
+    @Binding var path: NavigationPath
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Form {
+                // One section: how heavy the interface is and which palette it
+                // draws with are both just "how the app looks".
                 Section {
                     Picker("Interface", selection: $settings.uiMode) {
                         ForEach(UIMode.allCases) { mode in
@@ -22,12 +36,8 @@ struct SettingsView: View {
                     Text(settings.uiMode.detail)
                         .font(.footnote)
                         .foregroundStyle(theme.secondaryText)
-                } header: {
-                    Text("Display Mode")
-                }
 
-                Section {
-                    Picker("Appearance", selection: $themeStore.appearance) {
+                    Picker("Theme", selection: $themeStore.appearance) {
                         ForEach(AppearanceMode.allCases) { mode in
                             Label(mode.label, systemImage: mode.systemImage).tag(mode)
                         }
@@ -39,11 +49,10 @@ struct SettingsView: View {
                 } header: {
                     Text("Appearance")
                 }
+                .listRowBackground(theme.surface)
 
                 Section {
-                    NavigationLink {
-                        ColorSettingsView()
-                    } label: {
+                    NavigationLink(value: SettingsRoute.colors) {
                         LabeledContent("Colors") {
                             HStack(spacing: 4) {
                                 ForEach(ThemeColorToken.allCases.prefix(5)) { token in
@@ -58,20 +67,28 @@ struct SettingsView: View {
                 } footer: {
                     Text("Every color the app draws can be replaced. Light and dark are customized separately.")
                 }
+                .listRowBackground(theme.surface)
 
                 Section("Library") {
                     LabeledContent("Songs", value: "\(songs.count)")
                     LabeledContent("On disk", value: storageUsed)
                 }
+                .listRowBackground(theme.surface)
 
                 Section {
                     LabeledContent("Version", value: appVersion)
                 } footer: {
                     Text("Everything stays on this device. No accounts, no network, no analytics.")
                 }
+                .listRowBackground(theme.surface)
             }
             .themedScrollBackground(theme)
             .navigationTitle("Settings")
+            .navigationDestination(for: SettingsRoute.self) { route in
+                switch route {
+                case .colors: ColorSettingsView()
+                }
+            }
         }
     }
 
@@ -116,13 +133,17 @@ struct ColorSettingsView: View {
             } footer: {
                 Text("You're editing the \(editingScheme == .dark ? "dark" : "light") palette. Switch Appearance to edit the other one.")
             }
+            .listRowBackground(theme.surface)
 
             Section {
                 Button("Reset \(editingScheme == .dark ? "Dark" : "Light") Colors", role: .destructive) {
                     themeStore.resetAllColors(scheme: editingScheme)
                 }
+                // Destructive, so red rather than the accent.
+                .foregroundStyle(.red)
                 .disabled(!ThemeColorToken.allCases.contains { themeStore.isCustomised($0, scheme: editingScheme) })
             }
+            .listRowBackground(theme.surface)
         }
         .themedScrollBackground(theme)
         .navigationTitle("Colors")
@@ -165,7 +186,7 @@ struct ColorSettingsView: View {
 }
 
 #Preview {
-    SettingsView()
+    SettingsView(path: .constant(NavigationPath()))
         .environment(\.managedObjectContext, PersistenceController.preview.viewContext)
         .environmentObject(AppSettings())
         .environmentObject(ThemeStore())

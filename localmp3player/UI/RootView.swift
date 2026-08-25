@@ -45,6 +45,13 @@ struct RootView: View {
     /// Tabs are built on first visit and then kept, so launch only pays for the
     /// Library and each tab still keeps its navigation stack once opened.
     @State private var visited: Set<AppTab> = [.library]
+    /// Settings is the one tab whose push state resets on leaving, so drilling
+    /// into Colors and switching tabs away and back always lands back on
+    /// Settings' own root rather than wherever you left off. Held here, not in
+    /// SettingsView itself, because panes are kept alive behind an opacity
+    /// change rather than removed — SettingsView never disappears, so it has no
+    /// lifecycle event of its own to reset on.
+    @State private var settingsPath = NavigationPath()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -52,12 +59,17 @@ struct RootView: View {
                 pane(.library) { LibraryView() }
                 pane(.playlists) { PlaylistsView() }
                 pane(.tags) { TagsView() }
-                pane(.settings) { SettingsView() }
+                pane(.settings) { SettingsView(path: $settingsPath) }
             }
             BottomBar(tab: $tab, onOpenPlayer: { showingNowPlaying = true })
         }
         .background(theme.background)
-        .onChange(of: tab) { _, newValue in visited.insert(newValue) }
+        .onChange(of: tab) { oldValue, newValue in
+            visited.insert(newValue)
+            if oldValue == .settings, newValue != .settings {
+                settingsPath = NavigationPath()
+            }
+        }
         .environmentObject(importCoordinator)
         .sheet(isPresented: $showingNowPlaying) {
             NavigationStack {
@@ -65,7 +77,7 @@ struct RootView: View {
             }
             .environmentObject(playback)
             .environment(\.uiMode, uiMode)
-            .environment(\.theme, theme)
+            .themedSheet(theme)
             .tint(theme.accent)
             .foregroundStyle(theme.primaryText, theme.secondaryText)
             .modeTransactions(uiMode)
@@ -125,10 +137,27 @@ private struct BottomBar: View {
                 }
             }
             .padding(.top, 8)
+            // Standard floats the bar as a slab, so the row is centred inside it
+            // and inset from the ends, keeping the selected bubble off the edge.
+            // Performance runs to the bottom edge, where the safe area already
+            // leaves the space below and only the top needs padding.
+            .padding(.bottom, uiMode.usesMaterials ? 8 : 0)
+            .padding(.horizontal, uiMode.usesMaterials ? 6 : 0)
         }
     }
 
+    /// Performance keeps every tab captioned: its bar runs to the bottom of the
+    /// screen, so there's room for the text and nothing to relieve.
+    @ViewBuilder
     private func button(for candidate: AppTab) -> some View {
+        if uiMode.usesMaterials {
+            pillButton(for: candidate)
+        } else {
+            captionedButton(for: candidate)
+        }
+    }
+
+    private func captionedButton(for candidate: AppTab) -> some View {
         Button {
             tab = candidate
         } label: {
@@ -145,6 +174,49 @@ private struct BottomBar: View {
         .buttonStyle(.plain)
         .accessibilityLabel(candidate.title)
         .accessibilityAddTraits(tab == candidate ? [.isSelected, .isButton] : .isButton)
+    }
+
+    /// Standard's bar is a floating slab, where four icons with four captions
+    /// under them came out cramped. Only the selected tab spells itself out, in a
+    /// bubble; the rest are identifiable by glyph and still carry their name for
+    /// VoiceOver.
+    private func pillButton(for candidate: AppTab) -> some View {
+        let isSelected = tab == candidate
+        return Button {
+            withAnimation(uiMode.animation) { tab = candidate }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: candidate.systemImage)
+                    .font(.system(size: 19))
+                if isSelected {
+                    Text(candidate.title)
+                        .font(.footnote.weight(.semibold))
+                        .lineLimit(1)
+                }
+            }
+            .foregroundStyle(isSelected ? theme.accent : theme.secondaryText)
+            .padding(.horizontal, isSelected ? 12 : 8)
+            .padding(.vertical, 7)
+            .background(selectionBubble(isSelected))
+            // The selected tab takes the width its label needs; the other three
+            // share what's left. Splitting the bar four ways equally instead cut
+            // the label off as "Play…".
+            .frame(maxWidth: isSelected ? nil : .infinity)
+            .fixedSize(horizontal: isSelected, vertical: false)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(candidate.title)
+        .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
+    }
+
+    /// Only ever drawn in Standard, so it's free to be glass.
+    @ViewBuilder
+    private func selectionBubble(_ isSelected: Bool) -> some View {
+        if isSelected {
+            Capsule().fill(.regularMaterial)
+                .overlay(Capsule().strokeBorder(theme.accent.opacity(0.35), lineWidth: 0.5))
+        }
     }
 }
 

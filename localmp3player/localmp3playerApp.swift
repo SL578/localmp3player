@@ -37,11 +37,14 @@ private struct ThemedRoot: View {
         RootView()
             .environment(\.theme, palette)
             .tint(palette.accent)
-            // Primary only. Passing a secondary style here also repainted control
-            // chrome and SF Symbol second layers with it, which made Steppers and
-            // `play.circle.fill` look disabled. Secondary text goes through
-            // `.secondaryText()`, which stays scoped to text.
-            .foregroundStyle(palette.primaryText)
+            // The primary text color is deliberately *not* set here.
+            //
+            // An explicit foreground style beats `.tint` for any control below
+            // it, so setting the palette at the root painted every toolbar
+            // button in the text color — Cancel, Save and Select read as plain
+            // labels rather than buttons. It now goes on the content instead,
+            // through `themedScrollBackground`, which every screen already
+            // applies; toolbars are left to the tint, the way iOS expects.
             .symbolRenderingMode(.monochrome)
             .background(palette.background)
             .modeTransactions(uiMode)

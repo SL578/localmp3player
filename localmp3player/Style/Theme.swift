@@ -186,7 +186,9 @@ final class ThemeStore: ObservableObject {
 
     init() {
         let stored = UserDefaults.standard.string(forKey: Keys.appearance)
-        appearance = stored.flatMap(AppearanceMode.init(rawValue:)) ?? .system
+        // Dark is the out-of-the-box default; System remains a full option in
+        // Settings for anyone who wants the app to follow the device instead.
+        appearance = stored.flatMap(AppearanceMode.init(rawValue:)) ?? .dark
         overrides = UserDefaults.standard.dictionary(forKey: Keys.overrides) as? [String: String] ?? [:]
         dynamicScheme = DaylightWindow.scheme(at: Date())
         startTicker()

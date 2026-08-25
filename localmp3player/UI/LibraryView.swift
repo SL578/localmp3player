@@ -52,16 +52,19 @@ struct LibraryView: View {
                 .environmentObject(importCoordinator)
                 .environment(\.managedObjectContext, context)
                 .environment(\.uiMode, uiMode)
+                .themedSheet(theme)
         }
         .sheet(isPresented: $showingBatchTags) {
             BatchTagEditor(songIDs: selection) { endSelection() }
                 .environment(\.managedObjectContext, context)
                 .environment(\.uiMode, uiMode)
+                .themedSheet(theme)
         }
         .sheet(isPresented: $showingPlaylistPicker) {
             PlaylistPickerView(songs: selectedSongs()) { endSelection() }
                 .environment(\.managedObjectContext, context)
                 .environment(\.uiMode, uiMode)
+                .themedSheet(theme)
         }
         .confirmationDialog(
             "Delete \(selection.count) song\(selection.count == 1 ? "" : "s")?",
@@ -125,9 +128,14 @@ struct LibraryView: View {
                     }
                 }
             } label: {
-                // A `Label` here renders with no glyph at all — the control stays
-                // tappable but invisible. A bare `Image` draws reliably.
+                // A `Label` here renders with no glyph at all inside a `Menu` — the
+                // control stays tappable but invisible. A bare `Image` draws
+                // reliably, but unlike a `Button`'s label it doesn't pick up the
+                // root `.tint` on its own, which is why this stayed system
+                // black/white instead of matching Shuffle and Import. Foreground
+                // is set explicitly instead.
                 Image(systemName: "arrow.up.arrow.down")
+                    .foregroundStyle(theme.accent)
             }
             .accessibilityLabel("Sort")
         }
@@ -152,7 +160,7 @@ struct LibraryView: View {
                    systemImage: allSelectionLiked ? "heart.slash" : "heart") {
                 setLiked(!allSelectionLiked)
             }
-            action("Delete", systemImage: "trash", role: .destructive) { confirmingDelete = true }
+            action("Delete", systemImage: AppSymbol.delete, role: .destructive) { confirmingDelete = true }
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
@@ -209,6 +217,7 @@ struct LibraryView: View {
 struct PlaylistPickerView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.managedObjectContext) private var context
+    @Environment(\.theme) private var theme
     @FetchRequest(fetchRequest: LibraryQuery.allPlaylists()) private var playlists: FetchedResults<Playlist>
 
     let songs: [Song]
@@ -226,7 +235,9 @@ struct PlaylistPickerView: View {
                     } label: {
                         Label("New Playlist", systemImage: "plus")
                     }
+                    .accentAction(theme)
                 }
+                .listRowBackground(theme.surface)
                 Section("Playlists") {
                     if playlists.isEmpty {
                         Text("No playlists yet.").secondaryText()
@@ -247,7 +258,9 @@ struct PlaylistPickerView: View {
                         .contentShape(Rectangle())
                     }
                 }
+                .listRowBackground(theme.surface)
             }
+            .themedScrollBackground(theme)
             .navigationTitle("Add \(songs.count) Song\(songs.count == 1 ? "" : "s")")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -255,10 +268,31 @@ struct PlaylistPickerView: View {
                     Button("Cancel") { dismiss() }
                 }
             }
-            .alert("New Playlist", isPresented: $showingNewPlaylist) {
-                TextField("Name", text: $newPlaylistName)
-                Button("Cancel", role: .cancel) { newPlaylistName = "" }
-                Button("Create") { createAndAdd() }
+            .sheet(isPresented: $showingNewPlaylist) {
+                NavigationStack {
+                    Form {
+                        Section {
+                            TextField("Name", text: $newPlaylistName)
+                        }
+                        .listRowBackground(theme.surface)
+                    }
+                    .themedScrollBackground(theme)
+                    .themedSheet(theme)
+                    .navigationTitle("New Playlist")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") {
+                                newPlaylistName = ""
+                                showingNewPlaylist = false
+                            }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Create", action: createAndAdd)
+                                .disabled(newPlaylistName.trimmingCharacters(in: .whitespaces).isEmpty)
+                        }
+                    }
+                }
             }
         }
     }
@@ -290,35 +324,52 @@ struct SongListContent: View {
     @Environment(\.uiMode) private var uiMode
     @EnvironmentObject private var playback: PlaybackController
 
-    @FetchRequest private var songs: FetchedResults<Song>
+    @FetchRequest private var fetched: FetchedResults<Song>
+    /// Set when the caller supplies the songs itself, for lists whose contents
+    /// can't be expressed as a single fetch — a smart playlist's random sample,
+    /// for one.
+    private let suppliedSongs: [Song]?
     @Binding var selection: Set<UUID>
     let isSelecting: Bool
     let sourceName: String
 
     @State private var showingPlayer = false
+    @State private var editing: Song?
+    @State private var pendingDelete: Song?
 
     init(request: NSFetchRequest<Song>, selection: Binding<Set<UUID>>, isSelecting: Bool, sourceName: String) {
-        _songs = FetchRequest(fetchRequest: request, animation: nil)
+        _fetched = FetchRequest(fetchRequest: request, animation: nil)
+        suppliedSongs = nil
+        _selection = selection
+        self.isSelecting = isSelecting
+        self.sourceName = sourceName
+    }
+
+    init(songs: [Song], selection: Binding<Set<UUID>>, isSelecting: Bool, sourceName: String) {
+        _fetched = FetchRequest(fetchRequest: LibraryQuery.noSongs(), animation: nil)
+        suppliedSongs = songs
         _selection = selection
         self.isSelecting = isSelecting
         self.sourceName = sourceName
     }
 
     /// The songs currently on screen, which is what gets queued on tap.
-    var visibleSongs: [Song] { Array(songs) }
+    var visibleSongs: [Song] { suppliedSongs ?? Array(fetched) }
 
     var body: some View {
         List {
-            if songs.isEmpty {
+            if visibleSongs.isEmpty {
                 ContentUnavailableView(
                     "No Songs",
                     systemImage: "music.note",
                     description: Text("Import mp3 files from the Files app to get started.")
                 )
                 .listRowSeparator(.hidden)
+                .listRowBackground(theme.background)
             }
-            ForEach(songs) { song in
+            ForEach(visibleSongs) { song in
                 SongRow(song: song, isSelected: selection.contains(song.id), isSelecting: isSelecting)
+                    .listRowBackground(theme.background)
                     .contentShape(Rectangle())
                     .onTapGesture { handleTap(song) }
                     .swipeActions(edge: .leading) {
@@ -331,16 +382,31 @@ struct SongListContent: View {
                         .tint(theme.liked)
                     }
                     .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) { delete(song) } label: {
-                            Label("Delete", systemImage: "trash")
+                        Button(role: .destructive) { pendingDelete = song } label: {
+                            Label("Delete", systemImage: AppSymbol.delete)
                         }
+                        Button { editing = song } label: {
+                            Label("Edit", systemImage: AppSymbol.edit)
+                        }
+                        .tint(.indigo)
                     }
             }
         }
         .listStyle(.plain)
+        .themedScrollBackground(theme)
         .navigationDestination(isPresented: $showingPlayer) {
             NowPlayingView()
         }
+        .sheet(item: $editing) { song in
+            SongEditor(song: song)
+                .environment(\.managedObjectContext, context)
+                .themedSheet(theme)
+        }
+        .confirmDelete(
+            $pendingDelete,
+            title: { "Delete \($0.title)?" },
+            message: "The imported file is removed from the app for good."
+        ) { delete($0) }
     }
 
     private func handleTap(_ song: Song) {
@@ -348,7 +414,7 @@ struct SongListContent: View {
             if selection.contains(song.id) { selection.remove(song.id) } else { selection.insert(song.id) }
             return
         }
-        guard let index = songs.firstIndex(of: song) else { return }
+        guard let index = visibleSongs.firstIndex(of: song) else { return }
         playback.play(songs: visibleSongs, startingAt: index, sourceName: sourceName)
         // Land on the player for this list, rather than leaving the user to hunt
         // for the mini bar.

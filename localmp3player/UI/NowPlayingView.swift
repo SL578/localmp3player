@@ -36,6 +36,7 @@ struct MiniPlayerBar: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .foregroundStyle(theme.primaryText)
         .contentShape(Rectangle())
         .onTapGesture(perform: onTap)
         .accessibilityElement(children: .combine)
@@ -77,6 +78,12 @@ struct NowPlayingView: View {
             }
             .padding()
         }
+        // A pushed navigation destination is its own view controller with its own
+        // default background — it doesn't inherit RootView's. Every other screen
+        // gets this from `themedScrollBackground` on its List/Form; this one has
+        // neither, so it needs the background and text colour set directly.
+        .background(theme.background)
+        .foregroundStyle(theme.primaryText)
         .navigationTitle("Now Playing")
         .navigationBarTitleDisplayMode(.inline)
         .modeNavigationChrome(uiMode, theme: theme)

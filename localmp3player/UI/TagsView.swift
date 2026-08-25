@@ -4,16 +4,18 @@ import SwiftUI
 struct TagsView: View {
     @Environment(\.managedObjectContext) private var context
     @Environment(\.uiMode) private var uiMode
+    @Environment(\.theme) private var theme
     @FetchRequest(fetchRequest: LibraryQuery.allTags()) private var tags: FetchedResults<Tag>
 
-    @State private var newTagName = ""
-    @State private var showingNewTag = false
+    @State private var editorTarget: TagEditor.Target?
+    @State private var pendingDelete: Tag?
     @State private var target: Tag?
+    @State private var searchText = ""
 
     var body: some View {
         NavigationStack {
             List {
-                ForEach(tags) { tag in
+                ForEach(filteredTags) { tag in
                     DisclosureRow(isSelecting: false) {
                         navigate { target = tag }
                     } label: {
@@ -28,31 +30,58 @@ struct TagsView: View {
                                 .secondaryText()
                         }
                     }
+                    .listRowBackground(theme.background)
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) { pendingDelete = tag } label: {
+                            Label("Delete", systemImage: AppSymbol.delete)
+                        }
+                        Button { editorTarget = .existing(tag) } label: {
+                            Label("Edit", systemImage: AppSymbol.edit)
+                        }
+                        .tint(.indigo)
+                    }
                 }
-                .onDelete(perform: delete)
             }
+            // Flat rows on the themed background, the same as the Library.
+            .listStyle(.plain)
+            .themedScrollBackground(theme)
             .navigationTitle("Tags")
+            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Tags")
             .navigationDestination(item: $target) { TagDetailView(tag: $0) }
             .overlay {
-                if tags.isEmpty {
+                if isSearching, filteredTags.isEmpty {
+                    ContentUnavailableView.search(text: trimmedSearch)
+                } else if tags.isEmpty {
                     ContentUnavailableView("No Tags", systemImage: "tag", description: Text("Tags let you build smart playlists and browse quickly in CarPlay."))
                 }
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showingNewTag = true } label: { Image(systemName: "plus") }
+                    Button { editorTarget = .new } label: { Image(systemName: "plus") }
                 }
             }
-            .alert("New Tag", isPresented: $showingNewTag) {
-                TextField("Name", text: $newTagName)
-                Button("Cancel", role: .cancel) { newTagName = "" }
-                Button("Create") {
-                    Tag.findOrCreate(named: newTagName, in: context)
-                    newTagName = ""
-                    try? context.save()
-                }
+            .sheet(item: $editorTarget) { target in
+                TagEditor(target: target)
+                    .environment(\.managedObjectContext, context)
+                    .themedSheet(theme)
             }
+            .confirmDelete(
+                $pendingDelete,
+                title: { "Delete \($0.displayName)?" },
+                message: "The tag is removed from every song that has it. The songs themselves are kept."
+            ) { delete($0) }
         }
+    }
+
+    private var isSearching: Bool { !trimmedSearch.isEmpty }
+
+    private var trimmedSearch: String {
+        searchText.trimmingCharacters(in: .whitespaces)
+    }
+
+    private var filteredTags: [Tag] {
+        guard isSearching else { return Array(tags) }
+        return tags.filter { $0.displayName.localizedCaseInsensitiveContains(trimmedSearch) }
     }
 
     /// Performance mode pushes without a transition.
@@ -62,8 +91,105 @@ struct TagsView: View {
         withTransaction(transaction, action)
     }
 
-    private func delete(at offsets: IndexSet) {
-        for index in offsets { context.delete(tags[index]) }
+    private func delete(_ tag: Tag) {
+        context.delete(tag)
+        PersistenceController.shared.save()
+    }
+}
+
+/// Create or rename a tag. Mirrors `PlaylistEditor`/`SmartPlaylistEditor` — a
+/// proper Form sheet with Cancel on the left and a single confirm action, rather
+/// than a system alert whose two buttons both render in the accent color with no
+/// visual distinction between them.
+struct TagEditor: View {
+    enum Target: Identifiable {
+        case new
+        case existing(Tag)
+
+        var id: String {
+            switch self {
+            case .new: return "new"
+            case .existing(let tag): return tag.objectID.uriRepresentation().absoluteString
+            }
+        }
+    }
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
+    @Environment(\.managedObjectContext) private var context
+    @FetchRequest(fetchRequest: LibraryQuery.allTags()) private var tags: FetchedResults<Tag>
+
+    let target: Target
+
+    @State private var name = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Name", text: $name)
+                } footer: {
+                    if collidesWithAnotherTag {
+                        Text("A tag called “\(trimmedName)” already exists.")
+                    } else if !isNew {
+                        Text("Songs keep this tag — only what it's called changes.")
+                    }
+                }
+                .listRowBackground(theme.surface)
+            }
+            .themedScrollBackground(theme)
+            .navigationTitle(isNew ? "New Tag" : "Rename Tag")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        save()
+                        dismiss()
+                    }
+                    .disabled(trimmedName.isEmpty || collidesWithAnotherTag)
+                }
+            }
+            .onAppear(perform: load)
+        }
+    }
+
+    private var isNew: Bool {
+        if case .new = target { return true }
+        return false
+    }
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Tag names are unique in the store, so a rename onto an existing name would
+    /// fail the constraint at save time. Caught here instead, while there's still
+    /// something useful to say about it.
+    private var collidesWithAnotherTag: Bool {
+        let canonical = Tag.canonical(trimmedName)
+        guard !canonical.isEmpty else { return false }
+        return tags.contains { $0.name == canonical && $0.id != editingTag?.id }
+    }
+
+    private var editingTag: Tag? {
+        if case .existing(let tag) = target { return tag }
+        return nil
+    }
+
+    private func load() {
+        name = editingTag?.displayName ?? ""
+    }
+
+    private func save() {
+        if let tag = editingTag {
+            tag.displayName = trimmedName
+            tag.name = Tag.canonical(trimmedName)
+        } else {
+            Tag.findOrCreate(named: trimmedName, in: context)
+        }
         PersistenceController.shared.save()
     }
 }
@@ -113,7 +239,7 @@ struct TagDetailView: View {
         .sheet(isPresented: $showingColorPicker) {
             TagColorPicker(tag: tag)
                 .environment(\.managedObjectContext, context)
-                .environment(\.theme, theme)
+                .themedSheet(theme)
         }
         .sheet(isPresented: $showingSongPicker) {
             SongPickerView(
@@ -124,7 +250,7 @@ struct TagDetailView: View {
                 PersistenceController.shared.save()
             }
             .environment(\.managedObjectContext, context)
-            .environment(\.theme, theme)
+            .themedSheet(theme)
         }
         .overlay {
             if tag.songs.isEmpty {
@@ -160,12 +286,14 @@ struct TagColorPicker: View {
                 } header: {
                     Text("Preset colors")
                 }
+                .listRowBackground(theme.surface)
 
                 Section {
                     ColorPicker("Custom color", selection: customBinding, supportsOpacity: false)
                 } footer: {
                     Text("Tag colors show on song chips and make tags easier to pick out at a glance in CarPlay.")
                 }
+                .listRowBackground(theme.surface)
 
                 Section {
                     HStack {
@@ -178,7 +306,9 @@ struct TagColorPicker: View {
                             .background((Color(hex: tag.colorHex) ?? .gray).opacity(0.25), in: Capsule())
                     }
                 }
+                .listRowBackground(theme.surface)
             }
+            .themedScrollBackground(theme)
             .navigationTitle("Tag Color")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -260,9 +390,11 @@ struct BatchTagEditor: View {
                             }
                             newTagName = ""
                         }
+                        .accentAction(theme)
                         .disabled(newTagName.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
+                .listRowBackground(theme.surface)
                 Section("Tags") {
                     ForEach(tags) { tag in
                         let state = coverage[tag.id] ?? .absent
@@ -279,7 +411,9 @@ struct BatchTagEditor: View {
                         .onTapGesture { apply(tag, add: state != .all) }
                     }
                 }
+                .listRowBackground(theme.surface)
             }
+            .themedScrollBackground(theme)
             .navigationTitle("\(songIDs.count) Songs")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -28,6 +28,7 @@
         <attribute name="matchAllTags" optional="NO" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
         <attribute name="name" optional="NO" attributeType="String"/>
         <attribute name="resultLimit" optional="YES" attributeType="Integer 64" usesScalarValueType="NO"/>
+        <attribute name="ruleData" optional="YES" attributeType="Binary"/>
         <attribute name="ruleTypeRaw" optional="NO" attributeType="String" defaultValueString="tagInclude"/>
         <attribute name="tagIDsData" optional="YES" attributeType="Binary"/>
         <attribute name="thresholdDays" optional="YES" attributeType="Integer 64" usesScalarValueType="NO"/>

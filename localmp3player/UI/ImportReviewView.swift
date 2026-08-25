@@ -4,6 +4,7 @@ import SwiftUI
 /// Nothing is written to the library until the user confirms here.
 struct ImportReviewView: View {
     @Environment(\.uiMode) private var uiMode
+    @Environment(\.theme) private var theme
     @EnvironmentObject private var coordinator: ImportCoordinator
     @State private var isCommitting = false
 
@@ -22,7 +23,9 @@ struct ImportReviewView: View {
                 } footer: {
                     Text("Titles and artists are read from the file's own tags first, then guessed from the filename. Tap any row to correct it.")
                 }
+                .listRowBackground(theme.surface)
             }
+            .themedScrollBackground(theme)
             .navigationTitle("Review Import")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -46,6 +49,7 @@ struct ImportReviewView: View {
                         coordinator.resolvePendingDuplicate(decision)
                     }
                     .environment(\.uiMode, uiMode)
+                    .themedSheet(theme)
                     .interactiveDismissDisabled()
                 }
             }
@@ -90,6 +94,7 @@ private struct DraftSummaryRow: View {
 /// Edits one staged file. Works on a local copy so Cancel really discards.
 struct ImportDraftEditor: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
     @FetchRequest(fetchRequest: LibraryQuery.allTags()) private var existingTags: FetchedResults<Tag>
 
     @Binding var draft: ImportDraft
@@ -117,11 +122,13 @@ struct ImportDraftEditor: View {
                 } label: {
                     Label("Swap Title and Artist", systemImage: "arrow.up.arrow.down")
                 }
+                .accentAction(theme)
             } header: {
                 Text("Metadata")
             } footer: {
                 Text("Filenames are read as “Artist - Title”. Use swap for files that use the other order.")
             }
+            .listRowBackground(theme.surface)
 
             Section("Tags") {
                 ForEach(edited.tagNames, id: \.self) { name in
@@ -146,22 +153,27 @@ struct ImportDraftEditor: View {
                     } label: {
                         Label("Choose Existing Tag", systemImage: "chevron.down.circle")
                     }
+                    .accentAction(theme)
                 }
 
                 HStack {
                     TextField("New tag", text: $tagInput)
                         .onSubmit { addTag(named: tagInput) }
                     Button("Add") { addTag(named: tagInput) }
+                        .accentAction(theme)
                         .disabled(tagInput.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
+            .listRowBackground(theme.surface)
 
             Section("Source") {
                 LabeledContent("File", value: edited.originalFilename)
                 LabeledContent("Length", value: TimeFormatting.duration(edited.duration))
                 LabeledContent("Read from", value: edited.metadataSource.label)
             }
+            .listRowBackground(theme.surface)
         }
+        .themedScrollBackground(theme)
         .navigationTitle("Edit")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
@@ -215,21 +227,27 @@ struct DuplicateResolutionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Cancel gets its own row on the left, matching every other sheet in
-            // the app and giving the heading room to breathe below it.
-            HStack {
-                Button("Cancel") { onDecide(.cancel) }
-                Spacer()
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
+            // Cancel as its own capsule, title centered in the same row and
+            // vertically aligned with it — the standard sheet-header layout used
+            // everywhere else in the app, rather than a plain text link.
+            ZStack {
                 Text("Possible Duplicate")
                     .font(.headline)
-                Text("\(draft.title) — \(draft.artist) already looks like it's in your library.")
-                    .font(.subheadline)
-                    .secondaryText()
-                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity)
+
+                HStack {
+                    Button("Cancel") { onDecide(.cancel) }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.small)
+                    Spacer()
+                }
             }
+
+            Text("\(draft.title) — \(draft.artist) already looks like it's in your library.")
+                .font(.subheadline)
+                .secondaryText()
+                .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 16) {
                 comparisonColumn(

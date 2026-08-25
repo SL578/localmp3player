@@ -43,6 +43,14 @@ enum AudioFileStore {
         } catch {
             throw StoreError.copyFailed(underlying: error)
         }
+        // Clear the picker's Inbox copy now that we own a copy of our own, rather
+        // than waiting on the system's ~2 minute reclaim. Left in place, a second
+        // pick of the *same* source file before that reclaim ran found the old
+        // Inbox copy still there and avoided the name collision by renaming the
+        // new one to "<name> 2.mp3" — which the parser correctly read as a
+        // different title, so re-importing the same file back-to-back silently
+        // produced a new "duplicate" instead of matching the existing song.
+        try? FileManager.default.removeItem(at: source)
         let size = (try? destination.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         return ("Staging/" + destination.lastPathComponent, Int64(size))
     }

@@ -73,12 +73,45 @@ extension View {
         }
     }
 
+    /// Marks a button that lives *inside* a list or form as an action rather than
+    /// a label — New Playlist, Add Tags or Artists, and friends.
+    ///
+    /// `themedScrollBackground` puts the palette's text colour on list content,
+    /// and an explicit foreground style beats `.tint`, so without this these
+    /// buttons come out the same colour as the text beside them. Stated per
+    /// button on purpose: doing it with a `ButtonStyle` on the list instead put a
+    /// custom style in every row's environment, and `swipeActions` then produced
+    /// no actions at all — every swipe in the app silently stopped revealing
+    /// anything while scrolling carried on working.
+    func accentAction(_ theme: AppTheme) -> some View {
+        foregroundStyle(theme.accent)
+    }
+
+    /// Hands the resolved palette to a sheet. A sheet is presented into its own
+    /// context, so this is stated rather than relied on.
+    func themedSheet(_ theme: AppTheme) -> some View {
+        environment(\.theme, theme)
+    }
+
     /// Paints list/scroll surfaces with the themed background instead of the
-    /// system one, so custom colours reach the whole screen.
+    /// system one, and applies the palette to the content sitting on them.
+    ///
+    /// The text colour lives here rather than at the app root because an explicit
+    /// foreground style outranks `.tint`: set any higher, it also repaints the
+    /// navigation bar's buttons, and Cancel/Save/Select stop looking tappable.
+    /// Scoping it to the content leaves toolbars to the tint, the way iOS
+    /// expects. Buttons *inside* the content would otherwise be flattened into
+    /// plain text by it, so those state `accentAction` for themselves.
+    ///
+    /// Only the *primary* style is set. A secondary one passed alongside it also
+    /// reaches control chrome and SF Symbol second layers, which made Steppers
+    /// and `play.circle.fill` look disabled; secondary text goes through
+    /// `.secondaryText()`, which stays scoped to text.
     @ViewBuilder
     func themedScrollBackground(_ theme: AppTheme) -> some View {
         scrollContentBackground(.hidden)
             .background(theme.background)
+            .foregroundStyle(theme.primaryText)
     }
 }
 

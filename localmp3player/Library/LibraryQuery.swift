@@ -77,9 +77,23 @@ enum LibraryQuery {
         return request
     }
 
+    /// Matches nothing on purpose. Song lists that are handed their contents
+    /// directly still need a request to stand up their `@FetchRequest`, and this
+    /// one never touches the store.
+    static func noSongs() -> NSFetchRequest<Song> {
+        let request = Song.fetchRequest()
+        request.predicate = NSPredicate(value: false)
+        request.sortDescriptors = SongSort.title.descriptors
+        request.fetchLimit = 1
+        return request
+    }
+
     static func duplicateCandidates(for normalizedKey: String) -> NSFetchRequest<Song> {
         let request = Song.fetchRequest()
-        request.predicate = NSPredicate(format: "normalizedKey == %@", normalizedKey)
+        // Case/diacritic-insensitive as cheap insurance: normalizedKey is already
+        // folded at write time, but this keeps the lookup correct even against a
+        // row written before some future change to that folding.
+        request.predicate = NSPredicate(format: "normalizedKey ==[cd] %@", normalizedKey)
         request.fetchLimit = 1
         return request
     }
