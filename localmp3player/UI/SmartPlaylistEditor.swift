@@ -5,8 +5,18 @@ import SwiftUI
 struct SmartCriteria: Equatable {
     var tagIDs: Set<UUID> = []
     var artists: Set<String> = []
+    /// "Carries no tags at all." Kept beside `tagIDs` rather than inside it
+    /// because there is no tag to name — it's the absence of all of them.
+    var untagged = false
 
-    var isEmpty: Bool { tagIDs.isEmpty && artists.isEmpty }
+    var isEmpty: Bool { tagIDs.isEmpty && artists.isEmpty && !untagged }
+
+    /// Everything the Any/All mode applies to, untagged included.
+    var tagCriteriaCount: Int { tagIDs.count + (untagged ? 1 : 0) }
+
+    /// `All` plus Untagged asks for a song that both carries every listed tag and
+    /// carries none, which nothing can satisfy.
+    var isUnsatisfiable: Bool { untagged && !tagIDs.isEmpty }
 }
 
 /// A single chip: one tag or one artist, already resolved to something drawable.
@@ -14,11 +24,14 @@ private struct Criterion: Identifiable, Hashable {
     enum Kind: Hashable {
         case tag(UUID)
         case artist(String)
+        case untagged
     }
 
     let kind: Kind
     let label: String
+    /// Tags carry their own colour; everything else leads with a glyph instead.
     let color: Color?
+    var icon: String?
 
     var id: Kind { kind }
 }
@@ -139,6 +152,9 @@ struct SmartPlaylistEditor: View {
                     title: slot.title,
                     tags: Array(tags),
                     artists: artistNames,
+                    // Nothing to rescue: a song excluded for carrying a tag can't
+                    // also be the one that carries none.
+                    allowsUntagged: slot != .except,
                     criteria: binding(for: slot)
                 )
                 .themedSheet(theme)
@@ -155,7 +171,7 @@ struct SmartPlaylistEditor: View {
         Section {
             // Artists are single-valued, so All only ever describes the tags, and
             // it only means anything once there are two of them to combine.
-            if slot == .include, criteria.tagIDs.count > 1 {
+            if slot == .include, criteria.tagCriteriaCount > 1 {
                 Picker("Tag match", selection: $tagMatchMode) {
                     ForEach(TagMatchMode.allCases) { mode in
                         Text(mode.label).tag(mode)
@@ -188,8 +204,10 @@ struct SmartPlaylistEditor: View {
         } header: {
             Text(slot.title)
         } footer: {
-            if slot == .include, criteria.tagIDs.count > 1 {
-                Text("Match applies to tags: \(tagMatchMode == .all ? "a song needs every tag listed" : "any one tag is enough"). Artists always match any.")
+            if slot == .include, tagMatchMode == .all, criteria.isUnsatisfiable {
+                Text("Untagged with “All” can never match — a song can't carry every tag listed and no tags at all. Switch to Any, or remove one of them.")
+            } else if slot == .include, criteria.tagCriteriaCount > 1 {
+                Text("Match applies to the tags above: \(tagMatchMode == .all ? "a song needs every one listed" : "any one of them is enough"). Artists always match any.")
             } else if let footer = slot.footer {
                 Text(footer)
             }
@@ -258,6 +276,7 @@ struct SmartPlaylistEditor: View {
         switch criterion.kind {
         case .tag(let id): binding.wrappedValue.tagIDs.remove(id)
         case .artist(let name): binding.wrappedValue.artists.remove(name)
+        case .untagged: binding.wrappedValue.untagged = false
         }
         // An emptied Must Not Have takes its exceptions with it — they would have
         // nothing left to override, and leaving them behind would quietly widen
@@ -292,8 +311,10 @@ struct SmartPlaylistEditor: View {
             includeTagIDs: Array(include.tagIDs),
             includeTagsMatchMode: tagMatchMode,
             includeArtists: Array(include.artists),
+            includeUntagged: include.untagged,
             excludeTagIDs: Array(exclude.tagIDs),
             excludeArtists: Array(exclude.artists),
+            excludeUntagged: exclude.untagged,
             exceptIfHasTagIDs: Array(except.tagIDs),
             exceptIfHasArtists: Array(except.artists),
             notPlayedInDays: limitsNotPlayed ? notPlayedInDays : nil,
@@ -315,8 +336,8 @@ struct SmartPlaylistEditor: View {
         }
         name = playlist.name
         let rule = playlist.rule
-        include = SmartCriteria(tagIDs: Set(rule.includeTagIDs), artists: Set(rule.includeArtists))
-        exclude = SmartCriteria(tagIDs: Set(rule.excludeTagIDs), artists: Set(rule.excludeArtists))
+        include = SmartCriteria(tagIDs: Set(rule.includeTagIDs), artists: Set(rule.includeArtists), untagged: rule.includeUntagged)
+        exclude = SmartCriteria(tagIDs: Set(rule.excludeTagIDs), artists: Set(rule.excludeArtists), untagged: rule.excludeUntagged)
         except = SmartCriteria(tagIDs: Set(rule.exceptIfHasTagIDs), artists: Set(rule.exceptIfHasArtists))
         tagMatchMode = rule.includeTagsMatchMode
 
@@ -354,6 +375,12 @@ private extension SmartCriteria {
     /// Chips in one stable order: tags first with their colours, then artists,
     /// each group alphabetical.
     func resolved(tags: [UUID: Tag]) -> [Criterion] {
+        // Untagged leads: it says something about the whole group rather than
+        // naming one more member of it.
+        let untaggedChip = untagged
+            ? [Criterion(kind: .untagged, label: "Untagged", color: nil, icon: "tag.slash")]
+            : []
+
         let tagChips = tagIDs.compactMap { id -> Criterion? in
             guard let tag = tags[id] else { return nil }
             return Criterion(kind: .tag(id), label: tag.displayName, color: Color(hex: tag.colorHex) ?? .gray)
@@ -362,9 +389,9 @@ private extension SmartCriteria {
 
         let artistChips = artists
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
-            .map { Criterion(kind: .artist($0), label: $0, color: nil) }
+            .map { Criterion(kind: .artist($0), label: $0, color: nil, icon: "music.mic") }
 
-        return tagChips + artistChips
+        return untaggedChip + tagChips + artistChips
     }
 }
 
@@ -378,8 +405,8 @@ private struct CriterionChip: View {
     var body: some View {
         Button(action: onRemove) {
             HStack(spacing: 4) {
-                if criterion.color == nil {
-                    Image(systemName: "music.mic")
+                if let icon = criterion.icon {
+                    Image(systemName: icon)
                         .font(.caption2)
                         .foregroundStyle(theme.secondaryText)
                 }
@@ -468,6 +495,7 @@ private struct CriteriaPicker: View {
     let title: String
     let tags: [Tag]
     let artists: [String]
+    let allowsUntagged: Bool
     @Binding var criteria: SmartCriteria
 
     @State private var segment: Segment = .tags
@@ -519,8 +547,16 @@ private struct CriteriaPicker: View {
     @ViewBuilder
     private var tagRows: some View {
         let matches = tags.filter { matchesSearch($0.displayName) }
-        if matches.isEmpty {
+        let showsUntagged = allowsUntagged && matchesSearch("Untagged")
+        if matches.isEmpty && !showsUntagged {
             Text(tags.isEmpty ? "No tags yet." : "No tags match.").secondaryText()
+        }
+        // Pinned above the tags rather than sorted in among them: it isn't a tag,
+        // and it's the one row here that no amount of tagging will produce.
+        if showsUntagged {
+            row(label: "Untagged", color: nil, icon: "tag.slash", isOn: draft.untagged) {
+                draft.untagged.toggle()
+            }
         }
         ForEach(matches) { tag in
             row(label: tag.displayName, color: Color(hex: tag.colorHex) ?? .gray, isOn: draft.tagIDs.contains(tag.id)) {
@@ -536,17 +572,22 @@ private struct CriteriaPicker: View {
             Text(artists.isEmpty ? "No artists in your library yet." : "No artists match.").secondaryText()
         }
         ForEach(matches, id: \.self) { artist in
-            row(label: artist, color: nil, isOn: draft.artists.contains(artist)) {
+            row(label: artist, color: nil, icon: "music.mic", isOn: draft.artists.contains(artist)) {
                 toggle(artist, in: &draft.artists)
             }
         }
     }
 
-    private func row(label: String, color: Color?, isOn: Bool, toggle: @escaping () -> Void) -> some View {
+    private func row(label: String, color: Color?, icon: String? = nil, isOn: Bool, toggle: @escaping () -> Void) -> some View {
         Button(action: toggle) {
             HStack(spacing: 10) {
                 if let color {
                     Circle().fill(color).frame(width: 10, height: 10)
+                } else if let icon {
+                    Image(systemName: icon)
+                        .font(.caption)
+                        .foregroundStyle(theme.secondaryText)
+                        .frame(width: 10)
                 }
                 Text(label).foregroundStyle(theme.primaryText)
                 Spacer()

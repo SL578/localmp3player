@@ -7,7 +7,7 @@ import Foundation
 /// A song qualifies when all of these pass, and any criterion left empty passes
 /// automatically:
 ///
-/// 1. tag include — any, or all, of `includeTagIDs`
+/// 1. tag include — any, or all, of `includeTagIDs` (plus "untagged", if set)
 /// 2. artist include — any of `includeArtists`
 /// 3. behavioural filters — last played, date added, liked
 /// 4. not excluded — unless it also matches one of the `exceptIfHas` criteria
@@ -57,7 +57,7 @@ enum SmartPlaylistEngine {
     private static func predicate(for rule: SmartRule) -> NSPredicate? {
         var clauses: [NSPredicate] = []
 
-        if let tags = tagClause(rule.includeTagIDs, mode: rule.includeTagsMatchMode) {
+        if let tags = tagClause(rule.includeTagIDs, mode: rule.includeTagsMatchMode, untagged: rule.includeUntagged) {
             clauses.append(tags)
         }
         if let artists = artistClause(rule.includeArtists) {
@@ -97,6 +97,10 @@ enum SmartPlaylistEngine {
         var survives: [NSPredicate] = rule.excludeTagIDs.map {
             NSPredicate(format: "SUBQUERY(tags, $tag, $tag.id == %@).@count == 0", $0 as NSUUID)
         }
+        // Excluding "untagged" survives by carrying at least one tag.
+        if rule.excludeUntagged {
+            survives.append(NSPredicate(format: "tags.@count > 0"))
+        }
         // Artist is single-valued, so a plain negation says what it looks like.
         if let artists = artistClause(rule.excludeArtists) {
             survives.append(NSCompoundPredicate(notPredicateWithSubpredicate: artists))
@@ -119,9 +123,14 @@ enum SmartPlaylistEngine {
 
     // MARK: - Clauses
 
-    private static func tagClause(_ ids: [UUID], mode: TagMatchMode) -> NSPredicate? {
-        guard !ids.isEmpty else { return nil }
-        let each = ids.map { NSPredicate(format: "ANY tags.id == %@", $0 as NSUUID) }
+    /// `untagged` is one more member of the same group rather than a clause of
+    /// its own, so the Any/All mode covers it: with Any it widens the match to
+    /// songs carrying nothing, with All it demands they carry nothing *and* the
+    /// listed tags — a contradiction the editor warns about rather than hides.
+    private static func tagClause(_ ids: [UUID], mode: TagMatchMode, untagged: Bool = false) -> NSPredicate? {
+        guard !ids.isEmpty || untagged else { return nil }
+        var each = ids.map { NSPredicate(format: "ANY tags.id == %@", $0 as NSUUID) }
+        if untagged { each.append(NSPredicate(format: "tags.@count == 0")) }
         if each.count == 1 { return each[0] }
         return mode == .all
             ? NSCompoundPredicate(andPredicateWithSubpredicates: each)

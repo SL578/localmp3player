@@ -60,9 +60,16 @@ struct SmartRule: Equatable {
     var includeTagIDs: [UUID] = []
     var includeTagsMatchMode: TagMatchMode = .any
     var includeArtists: [String] = []
+    /// "Carries no tags at all", which no tag ID can express — it's the absence
+    /// of every tag rather than the presence of one. Joins the tag criteria
+    /// above, so `includeTagsMatchMode` governs it too.
+    var includeUntagged = false
 
     var excludeTagIDs: [UUID] = []
     var excludeArtists: [String] = []
+    /// The mirror of `includeUntagged`: excluding untagged songs leaves only
+    /// songs carrying at least one tag.
+    var excludeUntagged = false
 
     /// Rescues a song from the exclusions above. Never rescues one that failed
     /// the include criteria — see `SmartPlaylistEngine`.
@@ -76,7 +83,7 @@ struct SmartRule: Equatable {
     var resultLimit: Int?
     var sortBy: SmartSort = .title
 
-    var hasExclusions: Bool { !excludeTagIDs.isEmpty || !excludeArtists.isEmpty }
+    var hasExclusions: Bool { !excludeTagIDs.isEmpty || !excludeArtists.isEmpty || excludeUntagged }
 
     var hasBehavioralFilters: Bool {
         notPlayedInDays != nil || addedWithinDays != nil || onlyLiked || resultLimit != nil
@@ -85,7 +92,7 @@ struct SmartRule: Equatable {
     /// A rule with nothing set matches the whole library, which is a valid thing
     /// to save — it just means "every song, in this order".
     var isEmpty: Bool {
-        includeTagIDs.isEmpty && includeArtists.isEmpty
+        includeTagIDs.isEmpty && includeArtists.isEmpty && !includeUntagged
             && !hasExclusions
             && exceptIfHasTagIDs.isEmpty && exceptIfHasArtists.isEmpty
             && !hasBehavioralFilters
@@ -105,8 +112,8 @@ struct SmartRule: Equatable {
 extension SmartRule: Codable {
     private enum CodingKeys: String, CodingKey {
         case version
-        case includeTagIDs, includeTagsMatchMode, includeArtists
-        case excludeTagIDs, excludeArtists
+        case includeTagIDs, includeTagsMatchMode, includeArtists, includeUntagged
+        case excludeTagIDs, excludeArtists, excludeUntagged
         case exceptIfHasTagIDs, exceptIfHasArtists
         case notPlayedInDays, addedWithinDays, onlyLiked
         case resultLimit, sortBy
@@ -121,8 +128,10 @@ extension SmartRule: Codable {
         includeTagIDs = try container.decodeIfPresent([UUID].self, forKey: .includeTagIDs) ?? []
         includeTagsMatchMode = try container.decodeIfPresent(TagMatchMode.self, forKey: .includeTagsMatchMode) ?? .any
         includeArtists = try container.decodeIfPresent([String].self, forKey: .includeArtists) ?? []
+        includeUntagged = try container.decodeIfPresent(Bool.self, forKey: .includeUntagged) ?? false
         excludeTagIDs = try container.decodeIfPresent([UUID].self, forKey: .excludeTagIDs) ?? []
         excludeArtists = try container.decodeIfPresent([String].self, forKey: .excludeArtists) ?? []
+        excludeUntagged = try container.decodeIfPresent(Bool.self, forKey: .excludeUntagged) ?? false
         exceptIfHasTagIDs = try container.decodeIfPresent([UUID].self, forKey: .exceptIfHasTagIDs) ?? []
         exceptIfHasArtists = try container.decodeIfPresent([String].self, forKey: .exceptIfHasArtists) ?? []
         notPlayedInDays = try container.decodeIfPresent(Int.self, forKey: .notPlayedInDays)
@@ -138,8 +147,10 @@ extension SmartRule: Codable {
         try container.encode(includeTagIDs, forKey: .includeTagIDs)
         try container.encode(includeTagsMatchMode, forKey: .includeTagsMatchMode)
         try container.encode(includeArtists, forKey: .includeArtists)
+        try container.encode(includeUntagged, forKey: .includeUntagged)
         try container.encode(excludeTagIDs, forKey: .excludeTagIDs)
         try container.encode(excludeArtists, forKey: .excludeArtists)
+        try container.encode(excludeUntagged, forKey: .excludeUntagged)
         try container.encode(exceptIfHasTagIDs, forKey: .exceptIfHasTagIDs)
         try container.encode(exceptIfHasArtists, forKey: .exceptIfHasArtists)
         try container.encodeIfPresent(notPlayedInDays, forKey: .notPlayedInDays)
@@ -258,6 +269,7 @@ extension SmartPlaylist {
     /// with so the row still says something at a glance.
     var ruleIcon: String {
         let rule = self.rule
+        if rule.includeUntagged { return "tag.slash" }
         if !rule.includeTagIDs.isEmpty || rule.hasExclusions { return "tag" }
         if !rule.includeArtists.isEmpty { return "music.mic" }
         if rule.onlyLiked { return "heart.fill" }
@@ -273,12 +285,12 @@ extension SmartPlaylist {
         let rule = self.rule
         var parts: [String] = []
 
-        let included = rule.includeTagIDs.count + rule.includeArtists.count
+        let included = rule.includeTagIDs.count + rule.includeArtists.count + (rule.includeUntagged ? 1 : 0)
         if included > 0 {
             let joiner = rule.includeTagsMatchMode == .all && rule.includeTagIDs.count > 1 ? "all of" : "any of"
             parts.append(included == 1 ? "has 1 criterion" : "has \(joiner) \(included)")
         }
-        let excluded = rule.excludeTagIDs.count + rule.excludeArtists.count
+        let excluded = rule.excludeTagIDs.count + rule.excludeArtists.count + (rule.excludeUntagged ? 1 : 0)
         if excluded > 0 {
             parts.append("excludes \(excluded)")
             let rescued = rule.exceptIfHasTagIDs.count + rule.exceptIfHasArtists.count

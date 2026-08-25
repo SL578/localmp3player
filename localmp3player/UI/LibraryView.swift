@@ -109,10 +109,13 @@ struct LibraryView: View {
         }
         if isSelecting {
             ToolbarItem(placement: .topBarLeading) {
-                let visible = currentSongs()
-                let allSelected = !visible.isEmpty && selection.count == visible.count
+                // Membership, not a count: a selection made before the search was
+                // narrowed still holds songs that aren't on screen, and comparing
+                // counts called that "all selected" while rows sat unticked.
+                let visible = Set(currentSongs().map(\.id))
+                let allSelected = !visible.isEmpty && visible.isSubset(of: selection)
                 Button(allSelected ? "Select None" : "Select All") {
-                    selection = allSelected ? [] : Set(visible.map(\.id))
+                    selection = allSelected ? [] : visible
                 }
                 .disabled(visible.isEmpty)
             }
@@ -154,32 +157,17 @@ struct LibraryView: View {
                 .font(.subheadline)
                 .lineLimit(1)
             Spacer(minLength: 8)
-            action("Tag", systemImage: "tag") { showingBatchTags = true }
-            action("Add to Playlist", systemImage: "text.badge.plus") { showingPlaylistPicker = true }
-            action(allSelectionLiked ? "Unlike" : "Like",
-                   systemImage: allSelectionLiked ? "heart.slash" : "heart") {
+            SelectionAction("Tag", systemImage: "tag") { showingBatchTags = true }
+            SelectionAction("Add to Playlist", systemImage: "text.badge.plus") { showingPlaylistPicker = true }
+            SelectionAction(allSelectionLiked ? "Unlike" : "Like",
+                            systemImage: allSelectionLiked ? "heart.slash" : "heart") {
                 setLiked(!allSelectionLiked)
             }
-            action("Delete", systemImage: AppSymbol.delete, role: .destructive) { confirmingDelete = true }
+            SelectionAction("Delete", systemImage: AppSymbol.delete, role: .destructive) { confirmingDelete = true }
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
         .modePanelBackground(uiMode, theme: theme)
-    }
-
-    private func action(
-        _ title: String,
-        systemImage: String,
-        role: ButtonRole? = nil,
-        perform: @escaping () -> Void
-    ) -> some View {
-        Button(role: role, action: perform) {
-            Label(title, systemImage: systemImage)
-                .labelStyle(.iconOnly)
-                .frame(width: 44, height: 30)
-                .contentShape(Rectangle())
-        }
-        .accessibilityLabel(title)
     }
 
     /// The songs behind the current selection, in the list's own order.
@@ -316,6 +304,43 @@ struct PlaylistPickerView: View {
     }
 }
 
+/// One icon-only button in a bottom selection bar. Shared so the bars in the
+/// library and inside a tag are the same size and read the same way.
+struct SelectionAction: View {
+    let title: String
+    let systemImage: String
+    var role: ButtonRole?
+    let perform: () -> Void
+
+    init(_ title: String, systemImage: String, role: ButtonRole? = nil, perform: @escaping () -> Void) {
+        self.title = title
+        self.systemImage = systemImage
+        self.role = role
+        self.perform = perform
+    }
+
+    var body: some View {
+        Button(role: role, action: perform) {
+            Label(title, systemImage: systemImage)
+                .labelStyle(.iconOnly)
+                .frame(width: 44, height: 30)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(title)
+    }
+}
+
+/// What removing a song *from this list* means.
+///
+/// The library owns its songs, so removing one there deletes the imported file
+/// and goes through a confirmation. A tag or a playlist only holds a reference,
+/// so removing one there detaches it and destroys nothing — which is why it
+/// doesn't ask first.
+enum SongRemoval {
+    case deleteFromLibrary
+    case detach(label: String, perform: (Song) -> Void)
+}
+
 /// Shared list body — the same view backs the library, playlists, tags, and
 /// smart playlists so row behavior only exists in one place.
 struct SongListContent: View {
@@ -332,25 +357,40 @@ struct SongListContent: View {
     @Binding var selection: Set<UUID>
     let isSelecting: Bool
     let sourceName: String
+    let removal: SongRemoval
 
     @State private var showingPlayer = false
     @State private var editing: Song?
     @State private var pendingDelete: Song?
 
-    init(request: NSFetchRequest<Song>, selection: Binding<Set<UUID>>, isSelecting: Bool, sourceName: String) {
+    init(
+        request: NSFetchRequest<Song>,
+        selection: Binding<Set<UUID>>,
+        isSelecting: Bool,
+        sourceName: String,
+        removal: SongRemoval = .deleteFromLibrary
+    ) {
         _fetched = FetchRequest(fetchRequest: request, animation: nil)
         suppliedSongs = nil
         _selection = selection
         self.isSelecting = isSelecting
         self.sourceName = sourceName
+        self.removal = removal
     }
 
-    init(songs: [Song], selection: Binding<Set<UUID>>, isSelecting: Bool, sourceName: String) {
+    init(
+        songs: [Song],
+        selection: Binding<Set<UUID>>,
+        isSelecting: Bool,
+        sourceName: String,
+        removal: SongRemoval = .deleteFromLibrary
+    ) {
         _fetched = FetchRequest(fetchRequest: LibraryQuery.noSongs(), animation: nil)
         suppliedSongs = songs
         _selection = selection
         self.isSelecting = isSelecting
         self.sourceName = sourceName
+        self.removal = removal
     }
 
     /// The songs currently on screen, which is what gets queued on tap.
@@ -382,13 +422,7 @@ struct SongListContent: View {
                         .tint(theme.liked)
                     }
                     .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) { pendingDelete = song } label: {
-                            Label("Delete", systemImage: AppSymbol.delete)
-                        }
-                        Button { editing = song } label: {
-                            Label("Edit", systemImage: AppSymbol.edit)
-                        }
-                        .tint(.indigo)
+                        trailingActions(for: song)
                     }
             }
         }
@@ -407,6 +441,25 @@ struct SongListContent: View {
             title: { "Delete \($0.title)?" },
             message: "The imported file is removed from the app for good."
         ) { delete($0) }
+    }
+
+    /// Removal first, then Edit, so the destructive action stays at the outside
+    /// edge wherever this list is used.
+    @ViewBuilder
+    private func trailingActions(for song: Song) -> some View {
+        if case .detach(let label, let perform) = removal {
+            Button(role: .destructive) { perform(song) } label: {
+                Label(label, systemImage: "minus.circle")
+            }
+        } else {
+            Button(role: .destructive) { pendingDelete = song } label: {
+                Label("Delete", systemImage: AppSymbol.delete)
+            }
+        }
+        Button { editing = song } label: {
+            Label("Edit", systemImage: AppSymbol.edit)
+        }
+        .tint(.indigo)
     }
 
     private func handleTap(_ song: Song) {

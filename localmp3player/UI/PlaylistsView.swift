@@ -179,9 +179,17 @@ struct PlaylistsView: View {
         withTransaction(transaction, action)
     }
 
+    /// Everything currently on screen, both kinds together — which is what
+    /// Select All should reach, search included.
+    private var visibleIDs: Set<UUID> {
+        Set(filteredSmartPlaylists.map(\.id)).union(filteredPlaylists.map(\.id))
+    }
+
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
+        // Leading, the same as the Library and Tags. Select is where you start
+        // from, so it sits where the eye starts.
+        ToolbarItem(placement: .topBarLeading) {
             Button(isSelecting ? "Done" : "Select") {
                 withAnimation(uiMode.animation) {
                     editMode = isSelecting ? .inactive : .active
@@ -189,6 +197,16 @@ struct PlaylistsView: View {
                 selection.removeAll()
             }
             .disabled(smartPlaylists.isEmpty && playlists.isEmpty)
+        }
+        if isSelecting {
+            ToolbarItem(placement: .topBarLeading) {
+                let visible = visibleIDs
+                let allSelected = !visible.isEmpty && visible.isSubset(of: selection)
+                Button(allSelected ? "Select None" : "Select All") {
+                    selection = allSelected ? [] : visible
+                }
+                .disabled(visible.isEmpty)
+            }
         }
     }
 

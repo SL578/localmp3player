@@ -11,12 +11,15 @@ struct TagsView: View {
     @State private var pendingDelete: Tag?
     @State private var target: Tag?
     @State private var searchText = ""
+    @State private var editMode: EditMode = .inactive
+    @State private var selection = Set<UUID>()
+    @State private var confirmingDelete = false
 
     var body: some View {
         NavigationStack {
-            List {
+            List(selection: $selection) {
                 ForEach(filteredTags) { tag in
-                    DisclosureRow(isSelecting: false) {
+                    DisclosureRow(isSelecting: isSelecting) {
                         navigate { target = tag }
                     } label: {
                         HStack(spacing: 10) {
@@ -30,6 +33,7 @@ struct TagsView: View {
                                 .secondaryText()
                         }
                     }
+                    .tag(tag.id)
                     .listRowBackground(theme.background)
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) { pendingDelete = tag } label: {
@@ -48,6 +52,7 @@ struct TagsView: View {
             .navigationTitle("Tags")
             .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Tags")
             .navigationDestination(item: $target) { TagDetailView(tag: $0) }
+            .environment(\.editMode, $editMode)
             .overlay {
                 if isSearching, filteredTags.isEmpty {
                     ContentUnavailableView.search(text: trimmedSearch)
@@ -55,15 +60,26 @@ struct TagsView: View {
                     ContentUnavailableView("No Tags", systemImage: "tag", description: Text("Tags let you build smart playlists and browse quickly in CarPlay."))
                 }
             }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { editorTarget = .new } label: { Image(systemName: "plus") }
+            .toolbar { toolbarContent }
+            .safeAreaInset(edge: .bottom) {
+                if isSelecting && !selection.isEmpty {
+                    selectionBar
                 }
             }
             .sheet(item: $editorTarget) { target in
                 TagEditor(target: target)
                     .environment(\.managedObjectContext, context)
                     .themedSheet(theme)
+            }
+            .confirmationDialog(
+                "Delete \(selection.count) tag\(selection.count == 1 ? "" : "s")?",
+                isPresented: $confirmingDelete,
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive, action: deleteSelected)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The tags come off every song that has them. The songs themselves are kept.")
             }
             .confirmDelete(
                 $pendingDelete,
@@ -72,6 +88,8 @@ struct TagsView: View {
             ) { delete($0) }
         }
     }
+
+    private var isSelecting: Bool { editMode.isEditing }
 
     private var isSearching: Bool { !trimmedSearch.isEmpty }
 
@@ -89,6 +107,58 @@ struct TagsView: View {
         var transaction = Transaction()
         transaction.disablesAnimations = !uiMode.usesAnimation
         withTransaction(transaction, action)
+    }
+
+    /// Placed leading, the same as the Library and Playlists.
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            Button(isSelecting ? "Done" : "Select") {
+                withAnimation(uiMode.animation) {
+                    editMode = isSelecting ? .inactive : .active
+                }
+                selection.removeAll()
+            }
+            .disabled(tags.isEmpty)
+        }
+        if isSelecting {
+            ToolbarItem(placement: .topBarLeading) {
+                let visible = Set(filteredTags.map(\.id))
+                let allSelected = !visible.isEmpty && visible.isSubset(of: selection)
+                Button(allSelected ? "Select None" : "Select All") {
+                    selection = allSelected ? [] : visible
+                }
+                .disabled(visible.isEmpty)
+            }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            Button { editorTarget = .new } label: { Image(systemName: "plus") }
+        }
+    }
+
+    private var selectionBar: some View {
+        HStack {
+            Text("\(selection.count) selected")
+                .font(.subheadline)
+            Spacer()
+            Button(role: .destructive) {
+                confirmingDelete = true
+            } label: {
+                Label("Delete", systemImage: AppSymbol.delete)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        .modePanelBackground(uiMode, theme: theme)
+    }
+
+    private func deleteSelected() {
+        for tag in tags where selection.contains(tag.id) {
+            context.delete(tag)
+        }
+        selection.removeAll()
+        editMode = .inactive
+        PersistenceController.shared.save()
     }
 
     private func delete(_ tag: Tag) {
@@ -200,41 +270,84 @@ struct TagDetailView: View {
     @Environment(\.theme) private var theme
     @ObservedObject var tag: Tag
     @State private var selection = Set<UUID>()
+    @State private var isSelecting = false
     @State private var showingColorPicker = false
     @State private var showingSongPicker = false
+    @State private var showingPlaylistPicker = false
 
     var body: some View {
         SongListContent(
             request: LibraryQuery.songs(taggedWith: tag),
             selection: $selection,
-            isSelecting: false,
-            sourceName: tag.displayName
+            isSelecting: isSelecting,
+            sourceName: tag.displayName,
+            // This screen is a view of one tag's membership, not of the library.
+            // Deleting the song outright from here was destroying the file over
+            // what reads as "take it out of this tag".
+            removal: .detach(label: "Remove") { song in
+                song.removeTag(tag)
+                PersistenceController.shared.save()
+            }
         )
         .navigationTitle(tag.displayName)
         .navigationBarTitleDisplayMode(.inline)
         .modeNavigationChrome(uiMode, theme: theme)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                ShufflePlayButton(sourceName: tag.displayName) {
-                    LibraryQuery.fetch(LibraryQuery.songs(taggedWith: tag), in: context)
+            // Leading, next to the back button — the trailing side is already
+            // three controls deep, and this matches where Select sits everywhere
+            // else.
+            ToolbarItem(placement: .topBarLeading) {
+                Button(isSelecting ? "Done" : "Select") {
+                    withAnimation(uiMode.animation) { isSelecting.toggle() }
+                    if !isSelecting { selection.removeAll() }
+                }
+                .disabled(tag.songs.isEmpty)
+            }
+            if isSelecting {
+                ToolbarItem(placement: .topBarLeading) {
+                    let visible = Set(taggedSongs().map(\.id))
+                    let allSelected = !visible.isEmpty && visible.isSubset(of: selection)
+                    Button(allSelected ? "Select None" : "Select All") {
+                        selection = allSelected ? [] : visible
+                    }
+                    .disabled(visible.isEmpty)
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { showingSongPicker = true } label: {
-                    Image(systemName: "plus")
+            // Stood down while selecting: none of them act on a selection, and
+            // leaving them up pushed the bar past what fits, which iOS resolved by
+            // folding them into an anonymous "..." menu.
+            if !isSelecting {
+                ToolbarItem(placement: .topBarTrailing) {
+                    ShufflePlayButton(sourceName: tag.displayName) { taggedSongs() }
                 }
-                .accessibilityLabel("Add songs to this tag")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { showingColorPicker = true } label: {
-                    // Show the tag's actual color, so the button says what it does.
-                    Circle()
-                        .fill(Color(hex: tag.colorHex) ?? .gray)
-                        .frame(width: 20, height: 20)
-                        .overlay(Circle().strokeBorder(.secondary.opacity(0.4), lineWidth: 1))
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showingSongPicker = true } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("Add songs to this tag")
                 }
-                .accessibilityLabel("Tag color, currently \(TagPalette.name(for: tag.colorHex))")
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showingColorPicker = true } label: {
+                        // Show the tag's actual color, so the button says what it does.
+                        Circle()
+                            .fill(Color(hex: tag.colorHex) ?? .gray)
+                            .frame(width: 20, height: 20)
+                            .overlay(Circle().strokeBorder(.secondary.opacity(0.4), lineWidth: 1))
+                    }
+                    .accessibilityLabel("Tag color, currently \(TagPalette.name(for: tag.colorHex))")
+                }
             }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if isSelecting && !selection.isEmpty {
+                selectionBar
+            }
+        }
+        .sheet(isPresented: $showingPlaylistPicker) {
+            PlaylistPickerView(songs: selectedSongs()) { endSelection() }
+                .environment(\.managedObjectContext, context)
+                .environment(\.uiMode, uiMode)
+                .themedSheet(theme)
         }
         .sheet(isPresented: $showingColorPicker) {
             TagColorPicker(tag: tag)
@@ -261,6 +374,57 @@ struct TagDetailView: View {
                 )
             }
         }
+    }
+
+    /// No Delete here on purpose: removing songs from a tag never touches the
+    /// library, so this bar has nothing destructive on it.
+    private var selectionBar: some View {
+        HStack(spacing: 4) {
+            Text("\(selection.count) selected")
+                .font(.subheadline)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            SelectionAction("Add to Playlist", systemImage: "text.badge.plus") { showingPlaylistPicker = true }
+            SelectionAction(allSelectionLiked ? "Unlike" : "Like",
+                            systemImage: allSelectionLiked ? "heart.slash" : "heart") {
+                setLiked(!allSelectionLiked)
+            }
+            SelectionAction("Remove from Tag", systemImage: "minus.circle", role: .destructive) {
+                removeSelectedFromTag()
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        .modePanelBackground(uiMode, theme: theme)
+    }
+
+    private func taggedSongs() -> [Song] {
+        LibraryQuery.fetch(LibraryQuery.songs(taggedWith: tag), in: context)
+    }
+
+    private func selectedSongs() -> [Song] {
+        taggedSongs().filter { selection.contains($0.id) }
+    }
+
+    private var allSelectionLiked: Bool {
+        let songs = selectedSongs()
+        return !songs.isEmpty && songs.allSatisfy(\.isLiked)
+    }
+
+    private func setLiked(_ liked: Bool) {
+        for song in selectedSongs() { song.isLiked = liked }
+        PersistenceController.shared.save()
+    }
+
+    private func removeSelectedFromTag() {
+        for song in selectedSongs() { song.removeTag(tag) }
+        endSelection()
+        PersistenceController.shared.save()
+    }
+
+    private func endSelection() {
+        selection.removeAll()
+        isSelecting = false
     }
 }
 
