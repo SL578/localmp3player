@@ -14,14 +14,17 @@ clean tree no matter what is uncommitted here. Run git from this directory.
 
 ## Building
 
-`xcode-select` on this machine points at CommandLineTools, so command-line
-builds need `DEVELOPER_DIR` set:
-
 ```bash
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project localmp3player.xcodeproj -scheme localmp3player -destination 'platform=iOS Simulator,name=iPhone 17' build
+xcodebuild -project localmp3player.xcodeproj -scheme localmp3player -destination 'platform=iOS Simulator,name=iPhone 17' build
 ```
 
 Opening the project in Xcode works normally.
+
+If that fails to find a simulator SDK, check `xcode-select -p`: pointed at
+CommandLineTools rather than Xcode itself, `xcodebuild` can't build for a
+simulator. Either repoint it with
+`sudo xcode-select -s /Applications/Xcode.app`, or set
+`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` for the one command.
 
 ## Layout
 
