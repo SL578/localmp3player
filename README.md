@@ -3,6 +3,15 @@
 An offline, local-only music player for iOS. Songs are mp3 files you import
 yourself. No backend, no accounts, no network calls of any kind.
 
+## Repository
+
+This directory is the git root, and its remote is `SL578/localmp3player`. It
+sits inside the `codingRelated` checkout, which ignores this path outright
+rather than recording a gitlink — so running git from the parent reports a
+clean tree no matter what is uncommitted here. Run git from this directory.
+
+`docs/` holds the written specs and handoff notes the app was built from.
+
 ## Building
 
 `xcode-select` on this machine points at CommandLineTools, so command-line
