@@ -42,6 +42,27 @@ extension Tag {
     }
 }
 
+/// Something that carries a color from `TagPalette`, so one picker can paint all
+/// of them. `NSManagedObject` already conforms to `ObservableObject`, which is
+/// what lets the picker observe whichever one it was handed.
+protocol Colorable: NSManagedObject, ObservableObject {
+    var colorHex: String? { get set }
+    /// What the picker's preview chip reads.
+    var colorLabel: String { get }
+    /// Naming the screen after the thing being colored, rather than a generic
+    /// "Color", so the sheet says what it is a color for.
+    static var colorTitle: String { get }
+    static var colorFooter: String { get }
+}
+
+extension Tag: Colorable {
+    var colorLabel: String { displayName }
+    static var colorTitle: String { "Tag Color" }
+    static var colorFooter: String {
+        "Tag colors show on song chips and make tags easier to pick out at a glance in CarPlay."
+    }
+}
+
 enum TagPalette {
     /// Named so the picker can show something meaningful instead of a hex code.
     struct Swatch: Identifiable, Hashable {

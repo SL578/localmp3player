@@ -7,6 +7,11 @@ struct TagsView: View {
     @Environment(\.theme) private var theme
     @FetchRequest(fetchRequest: LibraryQuery.allTags()) private var tags: FetchedResults<Tag>
 
+    /// Bumped by `RootView` when the Tags tab is tapped while already showing.
+    /// Panes are kept alive behind an opacity change, so a tab has no lifecycle
+    /// event to reset on — this stands in for one.
+    var popToRoot: Int = 0
+
     @State private var editorTarget: TagEditor.Target?
     @State private var pendingDelete: Tag?
     @State private var target: Tag?
@@ -52,6 +57,7 @@ struct TagsView: View {
             .navigationTitle("Tags")
             .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Tags")
             .navigationDestination(item: $target) { TagDetailView(tag: $0) }
+            .onChange(of: popToRoot) { target = nil }
             .environment(\.editMode, $editMode)
             .overlay {
                 if isSearching, filteredTags.isEmpty {
@@ -270,16 +276,20 @@ struct TagDetailView: View {
     @Environment(\.theme) private var theme
     @ObservedObject var tag: Tag
     @State private var selection = Set<UUID>()
-    @State private var isSelecting = false
+    /// Editing a tag means picking songs out of it and renaming it. There is no
+    /// running order to rearrange — a tag's songs come back sorted by title —
+    /// so this drives the selection rather than a `List`'s own `EditMode`.
+    @State private var isEditing = false
     @State private var showingColorPicker = false
     @State private var showingSongPicker = false
     @State private var showingPlaylistPicker = false
+    @State private var renaming = false
 
     var body: some View {
         SongListContent(
             request: LibraryQuery.songs(taggedWith: tag),
             selection: $selection,
-            isSelecting: isSelecting,
+            isSelecting: isEditing,
             sourceName: tag.displayName,
             // This screen is a view of one tag's membership, not of the library.
             // Deleting the song outright from here was destroying the file over
@@ -290,20 +300,24 @@ struct TagDetailView: View {
             }
         )
         .navigationTitle(tag.displayName)
-        .navigationBarTitleDisplayMode(.inline)
+        // Large, like a playlist's. An inline title shares the bar with the
+        // buttons and loses to them; a large one gets its own line, which is
+        // both more readable and less crowded.
         .modeNavigationChrome(uiMode, theme: theme)
+        // Editing owns the whole bar: Done takes the back button's place, so the
+        // one way out of edit mode is the one that also settles the list. Leaving
+        // both up meant five controls and a title truncated to "Ta...".
+        .navigationBarBackButtonHidden(isEditing)
         .toolbar {
-            // Leading, next to the back button — the trailing side is already
-            // three controls deep, and this matches where Select sits everywhere
-            // else.
-            ToolbarItem(placement: .topBarLeading) {
-                Button(isSelecting ? "Done" : "Select") {
-                    withAnimation(uiMode.animation) { isSelecting.toggle() }
-                    if !isSelecting { selection.removeAll() }
+            if isEditing {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        withAnimation(uiMode.animation) { isEditing = false }
+                        selection.removeAll()
+                    } label: {
+                        Label("Done", systemImage: AppSymbol.done)
+                    }
                 }
-                .disabled(tag.songs.isEmpty)
-            }
-            if isSelecting {
                 ToolbarItem(placement: .topBarLeading) {
                     let visible = Set(taggedSongs().map(\.id))
                     let allSelected = !visible.isEmpty && visible.isSubset(of: selection)
@@ -313,10 +327,10 @@ struct TagDetailView: View {
                     .disabled(visible.isEmpty)
                 }
             }
-            // Stood down while selecting: none of them act on a selection, and
-            // leaving them up pushed the bar past what fits, which iOS resolved by
-            // folding them into an anonymous "..." menu.
-            if !isSelecting {
+            // Shaped like `PlaylistDetailView`: the actions that change the tag
+            // itself sit together while editing, and the ones that only make
+            // sense on a settled list stand down.
+            if !isEditing {
                 ToolbarItem(placement: .topBarTrailing) {
                     ShufflePlayButton(sourceName: tag.displayName) { taggedSongs() }
                 }
@@ -325,6 +339,19 @@ struct TagDetailView: View {
                         Image(systemName: "plus")
                     }
                     .accessibilityLabel("Add songs to this tag")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        withAnimation(uiMode.animation) { isEditing = true }
+                    } label: {
+                        Label("Edit", systemImage: AppSymbol.edit)
+                    }
+                }
+            } else {
+                // Name and color are both "what this tag is", so both live in
+                // edit mode and neither takes up room the rest of the time.
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { renaming = true } label: { Label("Rename", systemImage: AppSymbol.rename) }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showingColorPicker = true } label: {
@@ -339,9 +366,14 @@ struct TagDetailView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if isSelecting && !selection.isEmpty {
+            if isEditing && !selection.isEmpty {
                 selectionBar
             }
+        }
+        .sheet(isPresented: $renaming) {
+            TagEditor(target: .existing(tag))
+                .environment(\.managedObjectContext, context)
+                .themedSheet(theme)
         }
         .sheet(isPresented: $showingPlaylistPicker) {
             PlaylistPickerView(songs: selectedSongs()) { endSelection() }
@@ -350,7 +382,7 @@ struct TagDetailView: View {
                 .themedSheet(theme)
         }
         .sheet(isPresented: $showingColorPicker) {
-            TagColorPicker(tag: tag)
+            EntityColorPicker(object: tag)
                 .environment(\.managedObjectContext, context)
                 .themedSheet(theme)
         }
@@ -424,38 +456,38 @@ struct TagDetailView: View {
 
     private func endSelection() {
         selection.removeAll()
-        isSelecting = false
+        isEditing = false
     }
 }
 
-/// Picks the color used for this tag's chips in the library and in CarPlay.
-struct TagColorPicker: View {
+/// Picks the color for anything that carries one — a tag, a playlist, a smart
+/// playlist. Generic over `Colorable` rather than copied per entity: the swatch
+/// grid, the custom picker and the live preview are the same in all three, and
+/// three near-identical copies is exactly how two of them end up drifting.
+///
+/// `@ObservedObject` on the object itself, not a `Binding` to its color: writing
+/// through a binding changes the store but publishes nothing, so the swatch
+/// checkmark and the preview would only catch up on reopen.
+struct EntityColorPicker<Object: Colorable>: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.managedObjectContext) private var context
     @Environment(\.theme) private var theme
-    @ObservedObject var tag: Tag
-
-    private let columns = [GridItem(.adaptive(minimum: 64), spacing: 16)]
+    @ObservedObject var object: Object
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(TagPalette.swatches) { swatch in
-                            swatchButton(swatch)
-                        }
-                    }
-                    .padding(.vertical, 8)
+                    ColorSwatchGrid(selection: colorBinding)
                 } header: {
                     Text("Preset colors")
                 }
                 .listRowBackground(theme.surface)
 
                 Section {
-                    ColorPicker("Custom color", selection: customBinding, supportsOpacity: false)
+                    ColorPicker("Custom color", selection: colorBinding.asColor, supportsOpacity: false)
                 } footer: {
-                    Text("Tag colors show on song chips and make tags easier to pick out at a glance in CarPlay.")
+                    Text(Object.colorFooter)
                 }
                 .listRowBackground(theme.surface)
 
@@ -463,17 +495,17 @@ struct TagColorPicker: View {
                     HStack {
                         Text("Preview")
                         Spacer()
-                        Text(tag.displayName)
+                        Text(object.colorLabel)
                             .font(.caption)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background((Color(hex: tag.colorHex) ?? .gray).opacity(0.25), in: Capsule())
+                            .background((Color(hex: object.colorHex) ?? .gray).opacity(0.25), in: Capsule())
                     }
                 }
                 .listRowBackground(theme.surface)
             }
             .themedScrollBackground(theme)
-            .navigationTitle("Tag Color")
+            .navigationTitle(Object.colorTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -486,10 +518,48 @@ struct TagColorPicker: View {
         }
     }
 
+    private var colorBinding: Binding<String?> {
+        Binding(get: { object.colorHex }, set: { object.colorHex = $0 })
+    }
+}
+
+extension Binding where Value == String? {
+    /// Bridges a stored hex to the system color picker, so anything holding a
+    /// hex — a managed object or a draft — can offer a custom color with one row.
+    var asColor: Binding<Color> {
+        Binding<Color>(
+            get: { Color(hex: wrappedValue) ?? .gray },
+            set: { wrappedValue = $0.hexString }
+        )
+    }
+}
+
+/// The palette itself, over a plain hex binding. Split out of
+/// `EntityColorPicker` so the smart playlist editor — which holds a draft and
+/// has no object to hand a picker until Save — shows the same swatches rather
+/// than a second, slightly different set.
+struct ColorSwatchGrid: View {
+    @Environment(\.theme) private var theme
+    @Binding var selection: String?
+
+    private let columns = [GridItem(.adaptive(minimum: 64), spacing: 16)]
+
+    var body: some View {
+        LazyVGrid(columns: columns, spacing: 16) {
+            ForEach(TagPalette.swatches) { swatch in
+                swatchButton(swatch)
+            }
+        }
+        .padding(.vertical, 8)
+    }
+
     private func swatchButton(_ swatch: TagPalette.Swatch) -> some View {
-        let isSelected = tag.colorHex?.caseInsensitiveCompare(swatch.hex) == .orderedSame
+        let isSelected = selection?.caseInsensitiveCompare(swatch.hex) == .orderedSame
         return Button {
-            tag.colorHex = swatch.hex
+            // Tapping the current color clears it, which is the only way back to
+            // "no color" — and no color is a real state: it means the row draws
+            // in the theme accent.
+            selection = isSelected ? nil : swatch.hex
         } label: {
             VStack(spacing: 6) {
                 ZStack {
@@ -513,13 +583,6 @@ struct TagColorPicker: View {
         .buttonStyle(.plain)
         .accessibilityLabel(swatch.name)
         .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
-    }
-
-    private var customBinding: Binding<Color> {
-        Binding(
-            get: { Color(hex: tag.colorHex) ?? .gray },
-            set: { tag.colorHex = $0.hexString }
-        )
     }
 }
 

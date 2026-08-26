@@ -184,6 +184,8 @@ public final class SmartPlaylist: NSManagedObject, Identifiable {
     @NSManaged public var id: UUID
     @NSManaged public var name: String
     @NSManaged public var dateCreated: Date
+    /// Optional; nil falls back to the theme accent. See `Playlist.colorHex`.
+    @NSManaged public var colorHex: String?
     @NSManaged public var ruleData: Data?
     /// Pre-`ruleData` fields, and the coarse rule type that went with them. Only
     /// read now, as a migration source — nothing writes them any more.
@@ -192,6 +194,14 @@ public final class SmartPlaylist: NSManagedObject, Identifiable {
     @NSManaged public var matchAllTags: Bool
     @NSManaged public var thresholdDays: NSNumber?
     @NSManaged public var resultLimit: NSNumber?
+}
+
+extension SmartPlaylist: Colorable {
+    var colorLabel: String { name }
+    static var colorTitle: String { "Smart Playlist Color" }
+    static var colorFooter: String {
+        "The color tints this playlist's icon on its row, so it's quicker to find in a long list."
+    }
 }
 
 extension SmartPlaylist {

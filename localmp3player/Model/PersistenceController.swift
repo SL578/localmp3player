@@ -11,6 +11,12 @@ struct PersistenceController {
         if inMemory {
             container.persistentStoreDescriptions.first?.url = URL(fileURLWithPath: "/dev/null")
         }
+        // Stated rather than left to the default. Every model change so far has
+        // been an added optional attribute, which Core Data can infer a mapping
+        // for; a change it can't infer should fail loudly here rather than be
+        // silently absent because someone assumed migration was off.
+        container.persistentStoreDescriptions.first?.shouldMigrateStoreAutomatically = true
+        container.persistentStoreDescriptions.first?.shouldInferMappingModelAutomatically = true
         container.loadPersistentStores { _, error in
             if let error {
                 assertionFailure("Core Data store failed to load: \(error)")

@@ -9,6 +9,10 @@ struct PlaylistsView: View {
     @FetchRequest(fetchRequest: LibraryQuery.allSmartPlaylists()) private var smartPlaylists: FetchedResults<SmartPlaylist>
     @FetchRequest(fetchRequest: LibraryQuery.allPlaylists()) private var playlists: FetchedResults<Playlist>
 
+    /// Bumped by `RootView` when the Playlists tab is tapped while already
+    /// showing. See `TagsView.popToRoot`.
+    var popToRoot: Int = 0
+
     @State private var playlistEditorTarget: PlaylistEditor.Target?
     @State private var editorTarget: SmartPlaylistEditor.Target?
     @State private var editMode: EditMode = .inactive
@@ -64,12 +68,7 @@ struct PlaylistsView: View {
                             DisclosureRow(isSelecting: isSelecting) {
                                 navigate { manualTarget = playlist }
                             } label: {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(playlist.name)
-                                    Text("\(playlist.entries.count) songs")
-                                        .font(.caption)
-                                        .secondaryText()
-                                }
+                                PlaylistRow(playlist: playlist)
                             }
                             .tag(playlist.id)
                             .swipeActions(edge: .trailing) {
@@ -110,6 +109,10 @@ struct PlaylistsView: View {
             .navigationTitle("Playlists")
             .navigationDestination(item: $smartTarget) { SmartPlaylistDetailView(playlist: $0) }
             .navigationDestination(item: $manualTarget) { PlaylistDetailView(playlist: $0) }
+            .onChange(of: popToRoot) {
+                smartTarget = nil
+                manualTarget = nil
+            }
             .environment(\.editMode, $editMode)
             .toolbar { toolbarContent }
             .safeAreaInset(edge: .bottom) {
@@ -359,16 +362,42 @@ struct PlaylistEditor: View {
 }
 
 struct SmartPlaylistRow: View {
+    @Environment(\.theme) private var theme
     @ObservedObject var playlist: SmartPlaylist
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: playlist.ruleIcon)
                 .frame(width: 24)
-                .foregroundStyle(.tint)
+                // The playlist's own color rather than `.tint`, falling back to
+                // the accent — which is what `.tint` resolved to anyway, so an
+                // uncolored row is unchanged.
+                .foregroundStyle(playlist.tint(theme))
             VStack(alignment: .leading, spacing: 2) {
                 Text(playlist.name)
                 Text(playlist.ruleSummary)
+                    .font(.caption)
+                    .secondaryText()
+            }
+        }
+    }
+}
+
+/// A manual playlist's row. Given the same shape as `SmartPlaylistRow` — glyph,
+/// name, one line of detail — so the two sections read as one list and a color
+/// has the same place to land in both.
+struct PlaylistRow: View {
+    @Environment(\.theme) private var theme
+    @ObservedObject var playlist: Playlist
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "music.note.list")
+                .frame(width: 24)
+                .foregroundStyle(playlist.tint(theme))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(playlist.name)
+                Text("\(playlist.entries.count) songs")
                     .font(.caption)
                     .secondaryText()
             }
@@ -388,16 +417,23 @@ struct PlaylistDetailView: View {
     /// appear alongside Done while the list is being edited.
     @State private var editMode: EditMode = .inactive
     @State private var renaming = false
+    @State private var showingColorPicker = false
+    @State private var showingPlaylistPicker = false
     @State private var editing: Song?
+    /// Keyed by entry, not by song: a playlist may hold the same song twice, and
+    /// selecting one of those two rows must not tick the other.
+    @State private var selection = Set<UUID>()
+
+    private var isEditing: Bool { editMode.isEditing }
 
     var body: some View {
         List {
             ForEach(playlist.orderedEntries) { entry in
                 if let song = entry.song {
-                    SongRow(song: song, isSelected: false, isSelecting: false)
+                    SongRow(song: song, isSelected: selection.contains(entry.id), isSelecting: isEditing)
                         .listRowBackground(theme.background)
                         .contentShape(Rectangle())
-                        .onTapGesture { play(from: entry) }
+                        .onTapGesture { handleTap(entry) }
                         .swipeActions(edge: .leading) {
                             Button {
                                 song.isLiked.toggle()
@@ -421,11 +457,10 @@ struct PlaylistDetailView: View {
                         }
                 }
             }
+            // `onMove` stays — reordering is the other half of editing a
+            // playlist — but `onDelete` is gone: its red circles land in the same
+            // place as the selection ticks, and swiping a row still offers Remove.
             .onMove(perform: move)
-            .onDelete { offsets in
-                playlist.remove(atOffsets: offsets)
-                try? context.save()
-            }
         }
         // Bound to the list itself. Applied further out it never reached the
         // rows, so tapping Edit changed the button and nothing else.
@@ -436,29 +471,44 @@ struct PlaylistDetailView: View {
         .navigationDestination(isPresented: $showingPlayer) {
             NowPlayingView()
         }
+        // Done takes the back button's place while editing, the same as in
+        // `TagDetailView` — one way out, and a bar with room for the title.
+        .navigationBarBackButtonHidden(editMode.isEditing)
         .toolbar {
             // Hand-rolled rather than `EditButton`, which drives the environment
             // value it finds rather than this one — leaving the toolbar unable to
             // tell whether the list was being edited.
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    withAnimation(uiMode.animation) {
-                        editMode = editMode.isEditing ? .inactive : .active
-                    }
-                } label: {
-                    // Symbols rather than words, so this reads as the same Edit
-                    // action the swipe on this playlist's own row offers.
-                    editMode.isEditing
-                        ? Label("Done", systemImage: AppSymbol.done)
-                        : Label("Edit", systemImage: AppSymbol.edit)
-                }
-            }
-            // Editing a playlist means its name as much as its running order, so
-            // Rename lives with the row reordering rather than behind its own
-            // permanent button.
             if editMode.isEditing {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        withAnimation(uiMode.animation) { editMode = .inactive }
+                        selection.removeAll()
+                    } label: {
+                        Label("Done", systemImage: AppSymbol.done)
+                    }
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    let visible = Set(playlist.orderedEntries.map(\.id))
+                    let allSelected = !visible.isEmpty && visible.isSubset(of: selection)
+                    Button(allSelected ? "Select None" : "Select All") {
+                        selection = allSelected ? [] : visible
+                    }
+                    .disabled(visible.isEmpty)
+                }
+                // Editing a playlist means its name as much as its running order,
+                // so Rename lives with the row reordering rather than behind its
+                // own permanent button.
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { renaming = true } label: { Label("Rename", systemImage: AppSymbol.rename) }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showingColorPicker = true } label: {
+                        Circle()
+                            .fill(playlist.tint(theme))
+                            .frame(width: 20, height: 20)
+                            .overlay(Circle().strokeBorder(.secondary.opacity(0.4), lineWidth: 1))
+                    }
+                    .accessibilityLabel("Playlist color, currently \(TagPalette.name(for: playlist.colorHex))")
                 }
             } else {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -468,7 +518,32 @@ struct PlaylistDetailView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showingPicker = true } label: { Image(systemName: "plus") }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        withAnimation(uiMode.animation) { editMode = .active }
+                    } label: {
+                        // Symbols rather than words, so this reads as the same Edit
+                        // action the swipe on this playlist's own row offers.
+                        Label("Edit", systemImage: AppSymbol.edit)
+                    }
+                }
             }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if isEditing && !selection.isEmpty {
+                selectionBar
+            }
+        }
+        .sheet(isPresented: $showingPlaylistPicker) {
+            PlaylistPickerView(songs: selectedSongs()) { endSelection() }
+                .environment(\.managedObjectContext, context)
+                .environment(\.uiMode, uiMode)
+                .themedSheet(theme)
+        }
+        .sheet(isPresented: $showingColorPicker) {
+            EntityColorPicker(object: playlist)
+                .environment(\.managedObjectContext, context)
+                .themedSheet(theme)
         }
         .sheet(isPresented: $renaming) {
             PlaylistEditor(target: .existing(playlist))
@@ -493,6 +568,72 @@ struct PlaylistDetailView: View {
                 ContentUnavailableView("Empty Playlist", systemImage: "music.note.list", description: Text("Tap + to add songs."))
             }
         }
+    }
+
+    /// No Delete here: removing a song from a playlist never touches the library.
+    private var selectionBar: some View {
+        HStack(spacing: 4) {
+            Text("\(selection.count) selected")
+                .font(.subheadline)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            SelectionAction("Add to Playlist", systemImage: "text.badge.plus") { showingPlaylistPicker = true }
+            SelectionAction(allSelectionLiked ? "Unlike" : "Like",
+                            systemImage: allSelectionLiked ? "heart.slash" : "heart") {
+                setLiked(!allSelectionLiked)
+            }
+            SelectionAction("Remove from Playlist", systemImage: "minus.circle", role: .destructive) {
+                removeSelected()
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        .modePanelBackground(uiMode, theme: theme)
+    }
+
+    private func handleTap(_ entry: PlaylistEntry) {
+        guard isEditing else {
+            play(from: entry)
+            return
+        }
+        if selection.contains(entry.id) { selection.remove(entry.id) } else { selection.insert(entry.id) }
+    }
+
+    /// The songs behind the selected rows, de-duplicated: two rows can point at
+    /// one song, and liking it twice or adding it to a playlist twice is not what
+    /// picking both rows means.
+    private func selectedSongs() -> [Song] {
+        var seen = Set<UUID>()
+        return playlist.orderedEntries
+            .filter { selection.contains($0.id) }
+            .compactMap(\.song)
+            .filter { seen.insert($0.id).inserted }
+    }
+
+    private var allSelectionLiked: Bool {
+        let songs = selectedSongs()
+        return !songs.isEmpty && songs.allSatisfy(\.isLiked)
+    }
+
+    private func setLiked(_ liked: Bool) {
+        for song in selectedSongs() { song.isLiked = liked }
+        PersistenceController.shared.save()
+    }
+
+    private func removeSelected() {
+        let offsets = IndexSet(
+            playlist.orderedEntries.enumerated()
+                .filter { selection.contains($0.element.id) }
+                .map(\.offset)
+        )
+        playlist.remove(atOffsets: offsets)
+        endSelection()
+        PersistenceController.shared.save()
+    }
+
+    private func endSelection() {
+        selection.removeAll()
+        editMode = .inactive
     }
 
     private func play(from entry: PlaylistEntry) {
@@ -541,14 +682,13 @@ struct SmartPlaylistDetailView: View {
             sourceName: playlist.name
         )
         .navigationTitle(playlist.name)
-        .navigationBarTitleDisplayMode(.inline)
+        // Large, matching a playlist's — see `TagDetailView`.
         .modeNavigationChrome(uiMode, theme: theme)
         .toolbar {
+            // Shuffle only. Play All queued the same songs in the order already
+            // on screen, which tapping the first row does.
             ToolbarItem(placement: .topBarTrailing) {
                 ShufflePlayButton(sourceName: playlist.name) { matches }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                PlayAllButton(sourceName: playlist.name) { matches }
             }
             // The rule is the only thing there is to edit here, and reaching it
             // meant backing out to the list first.

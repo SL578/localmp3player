@@ -19,18 +19,3 @@ struct ShufflePlayButton: View {
     }
 }
 
-struct PlayAllButton: View {
-    @EnvironmentObject private var playback: PlaybackController
-
-    let sourceName: String
-    let songs: () -> [Song]
-
-    var body: some View {
-        Button {
-            playback.play(songs: songs(), startingAt: 0, sourceName: sourceName)
-        } label: {
-            Label("Play", systemImage: "play.fill")
-        }
-        .accessibilityLabel("Play \(sourceName)")
-    }
-}

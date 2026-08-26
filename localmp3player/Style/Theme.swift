@@ -278,6 +278,17 @@ final class ThemeStore: ObservableObject {
     }
 }
 
+// MARK: - Colorable
+
+extension Colorable {
+    /// What to draw this thing in. An uncolored one falls back to the theme
+    /// accent, so everything that existed before colors did looks exactly as it
+    /// did — nil means "no opinion", not "no color".
+    func tint(_ theme: AppTheme) -> Color {
+        Color(hex: colorHex) ?? theme.accent
+    }
+}
+
 // MARK: - Color <-> hex
 
 extension Color {

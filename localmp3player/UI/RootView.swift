@@ -52,16 +52,24 @@ struct RootView: View {
     /// change rather than removed — SettingsView never disappears, so it has no
     /// lifecycle event of its own to reset on.
     @State private var settingsPath = NavigationPath()
+    /// One counter per tab, bumped when that tab is tapped while already showing.
+    /// A pane is kept alive behind an opacity change, so it never disappears and
+    /// has no lifecycle event to reset on — the panes watch this instead.
+    @State private var popSignal: [AppTab: Int] = [:]
 
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
                 pane(.library) { LibraryView() }
-                pane(.playlists) { PlaylistsView() }
-                pane(.tags) { TagsView() }
+                pane(.playlists) { PlaylistsView(popToRoot: popSignal[.playlists, default: 0]) }
+                pane(.tags) { TagsView(popToRoot: popSignal[.tags, default: 0]) }
                 pane(.settings) { SettingsView(path: $settingsPath) }
             }
-            BottomBar(tab: $tab, onOpenPlayer: { showingNowPlaying = true })
+            BottomBar(
+                tab: $tab,
+                onReselect: reselect,
+                onOpenPlayer: { showingNowPlaying = true }
+            )
         }
         .background(theme.background)
         .onChange(of: tab) { oldValue, newValue in
@@ -84,6 +92,17 @@ struct RootView: View {
         }
     }
 
+    /// Tapping the tab you are already on takes that tab back to its own root —
+    /// the standard behaviour, and the only way out of a pane that otherwise
+    /// remembers exactly where you left it.
+    private func reselect(_ candidate: AppTab) {
+        if candidate == .settings {
+            settingsPath = NavigationPath()
+        } else {
+            popSignal[candidate, default: 0] += 1
+        }
+    }
+
     /// A visited pane stays alive so each tab keeps its own navigation stack and
     /// scroll position when you come back to it.
     @ViewBuilder
@@ -103,6 +122,7 @@ private struct BottomBar: View {
     @Environment(\.theme) private var theme
     @EnvironmentObject private var playback: PlaybackController
     @Binding var tab: AppTab
+    let onReselect: (AppTab) -> Void
     let onOpenPlayer: () -> Void
 
     var body: some View {
@@ -159,7 +179,7 @@ private struct BottomBar: View {
 
     private func captionedButton(for candidate: AppTab) -> some View {
         Button {
-            tab = candidate
+            select(candidate)
         } label: {
             VStack(spacing: 3) {
                 Image(systemName: candidate.systemImage)
@@ -183,7 +203,7 @@ private struct BottomBar: View {
     private func pillButton(for candidate: AppTab) -> some View {
         let isSelected = tab == candidate
         return Button {
-            withAnimation(uiMode.animation) { tab = candidate }
+            select(candidate)
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: candidate.systemImage)
@@ -208,6 +228,14 @@ private struct BottomBar: View {
         .buttonStyle(.plain)
         .accessibilityLabel(candidate.title)
         .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
+    }
+
+    private func select(_ candidate: AppTab) {
+        guard tab != candidate else {
+            onReselect(candidate)
+            return
+        }
+        withAnimation(uiMode.animation) { tab = candidate }
     }
 
     /// Only ever drawn in Standard, so it's free to be glass.

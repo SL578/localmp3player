@@ -96,6 +96,10 @@ struct SmartPlaylistEditor: View {
     @FetchRequest(fetchRequest: LibraryQuery.allSongs()) private var songs: FetchedResults<Song>
 
     @State private var name = ""
+    /// A draft like everything else here — nothing is written until Save, and a
+    /// brand-new playlist has no object for `EntityColorPicker` to observe, so
+    /// the palette is shown inline over this instead.
+    @State private var colorHex: String?
     @State private var include = SmartCriteria()
     @State private var exclude = SmartCriteria()
     @State private var except = SmartCriteria()
@@ -118,6 +122,19 @@ struct SmartPlaylistEditor: View {
             Form {
                 Section {
                     TextField("Name", text: $name)
+                }
+                .listRowBackground(theme.surface)
+
+                // With the name rather than on the detail screen's toolbar: this
+                // sheet is what "edit this smart playlist" means, the same way
+                // edit mode is for a tag or a playlist.
+                Section {
+                    ColorSwatchGrid(selection: $colorHex)
+                    ColorPicker("Custom color", selection: $colorHex.asColor, supportsOpacity: false)
+                } header: {
+                    Text("Color")
+                } footer: {
+                    Text(SmartPlaylist.colorFooter)
                 }
                 .listRowBackground(theme.surface)
 
@@ -335,6 +352,7 @@ struct SmartPlaylistEditor: View {
             return
         }
         name = playlist.name
+        colorHex = playlist.colorHex
         let rule = playlist.rule
         include = SmartCriteria(tagIDs: Set(rule.includeTagIDs), artists: Set(rule.includeArtists), untagged: rule.includeUntagged)
         exclude = SmartCriteria(tagIDs: Set(rule.excludeTagIDs), artists: Set(rule.excludeArtists), untagged: rule.excludeUntagged)
@@ -366,6 +384,7 @@ struct SmartPlaylistEditor: View {
             playlist = existing
         }
         playlist.name = name.trimmingCharacters(in: .whitespaces)
+        playlist.colorHex = colorHex
         playlist.rule = draftRule
         PersistenceController.shared.save()
     }
