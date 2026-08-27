@@ -21,6 +21,8 @@ struct SettingsView: View {
     /// pane never actually disappears to reset itself.
     @Binding var path: NavigationPath
 
+    @StateObject private var artworkRefresher = ArtworkRefresher()
+
     var body: some View {
         NavigationStack(path: $path) {
             Form {
@@ -69,9 +71,28 @@ struct SettingsView: View {
                 }
                 .listRowBackground(theme.surface)
 
-                Section("Library") {
+                Section {
                     LabeledContent("Songs", value: "\(songs.count)")
                     LabeledContent("On disk", value: storageUsed)
+                    Button {
+                        Task { await artworkRefresher.run(in: context) }
+                    } label: {
+                        HStack {
+                            Text("Upgrade Artwork")
+                            Spacer()
+                            if case .running(let done, let total) = artworkRefresher.phase {
+                                Text("\(done) of \(total)")
+                                    .font(.footnote.monospacedDigit())
+                                    .foregroundStyle(theme.secondaryText)
+                            }
+                        }
+                    }
+                    .accentAction(theme)
+                    .disabled(artworkRefresher.isRunning || songs.isEmpty)
+                } header: {
+                    Text("Library")
+                } footer: {
+                    Text(artworkFooter)
                 }
                 .listRowBackground(theme.surface)
 
@@ -96,6 +117,21 @@ struct SettingsView: View {
         themeStore.appearance == .dynamic
             ? "\(themeStore.appearance.detail) \(DaylightWindow.summary)"
             : themeStore.appearance.detail
+    }
+
+    /// Cover art is stored at the size the app draws it, and that size went up.
+    /// Songs imported before then kept the smaller copy they were saved with,
+    /// and only the file itself still has the full picture — so this is a manual
+    /// pass rather than something that could quietly happen at launch.
+    private var artworkFooter: String {
+        switch artworkRefresher.phase {
+        case .idle:
+            return "Re-reads cover art from songs imported before artwork was stored at full quality. Only affects songs that need it."
+        case .running:
+            return "Reading cover art\u{2026}"
+        case .finished(let summary):
+            return summary
+        }
     }
 
     private var storageUsed: String {
