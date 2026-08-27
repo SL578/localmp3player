@@ -43,6 +43,7 @@ struct PlaylistsView: View {
                                 Button(role: .destructive) { pendingSmartDelete = playlist } label: {
                                     Label("Delete", systemImage: AppSymbol.delete)
                                 }
+                                .tint(.red)
                                 Button { editorTarget = .existing(playlist) } label: {
                                     Label("Edit", systemImage: AppSymbol.edit)
                                 }
@@ -75,6 +76,7 @@ struct PlaylistsView: View {
                                 Button(role: .destructive) { pendingPlaylistDelete = playlist } label: {
                                     Label("Delete", systemImage: AppSymbol.delete)
                                 }
+                                .tint(.red)
                                 Button { playlistEditorTarget = .existing(playlist) } label: {
                                     Label("Edit", systemImage: AppSymbol.edit)
                                 }
@@ -424,13 +426,21 @@ struct PlaylistDetailView: View {
             ForEach(playlist.orderedEntries) { entry in
                 if let song = entry.song {
                     SongRow(song: song, isSelected: selection.contains(entry.id), isSelecting: isEditing)
-                        .likeSwipe(song) {
-                            song.isLiked.toggle()
-                            try? context.save()
-                        }
                         .listRowBackground(theme.background)
                         .contentShape(Rectangle())
                         .onTapGesture { handleTap(entry) }
+                        .swipeActions(edge: .leading) {
+                            Button {
+                                song.isLiked.toggle()
+                                try? context.save()
+                            } label: {
+                                Label(
+                                    song.isLiked ? "Unlike" : "Like",
+                                    systemImage: song.isLiked ? "heart.slash" : "heart"
+                                )
+                            }
+                            .tint(theme.liked)
+                        }
                         .swipeActions(edge: .trailing) {
                             // Removes the song from this playlist rather than from
                             // the library, so it doesn't go through the delete

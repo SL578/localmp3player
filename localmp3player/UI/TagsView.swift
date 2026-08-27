@@ -44,6 +44,7 @@ struct TagsView: View {
                         Button(role: .destructive) { pendingDelete = tag } label: {
                             Label("Delete", systemImage: AppSymbol.delete)
                         }
+                        .tint(.red)
                         Button { editorTarget = .existing(tag) } label: {
                             Label("Edit", systemImage: AppSymbol.edit)
                         }

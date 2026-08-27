@@ -51,10 +51,3 @@ struct SelectionAction: View {
         .accessibilityLabel(title)
     }
 }
-
-/// What removing a song *from this list* means.
-///
-/// The library owns its songs, so removing one there deletes the imported file
-/// and goes through a confirmation. A tag or a playlist only holds a reference,
-/// so removing one there detaches it and destroys nothing — which is why it
-/// doesn't ask first.

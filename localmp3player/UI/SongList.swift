@@ -14,9 +14,6 @@ enum SongRemoval {
 
 /// Shared list body — the same view backs the library, playlists, tags, and
 /// smart playlists so row behavior only exists in one place.
-
-/// Shared list body — the same view backs the library, playlists, tags, and
-/// smart playlists so row behavior only exists in one place.
 struct SongListContent: View {
     @Environment(\.managedObjectContext) private var context
     @Environment(\.theme) private var theme
@@ -81,10 +78,18 @@ struct SongListContent: View {
             }
             ForEach(visibleSongs) { song in
                 SongRow(song: song, isSelected: selection.contains(song.id), isSelecting: isSelecting)
-                    .likeSwipe(song) { toggleLiked(song) }
                     .listRowBackground(theme.background)
                     .contentShape(Rectangle())
                     .onTapGesture { handleTap(song) }
+                    .swipeActions(edge: .leading) {
+                        Button { toggleLiked(song) } label: {
+                            Label(
+                                song.isLiked ? "Unlike" : "Like",
+                                systemImage: song.isLiked ? "heart.slash" : "heart"
+                            )
+                        }
+                        .tint(theme.liked)
+                    }
                     .swipeActions(edge: .trailing) {
                         trailingActions(for: song)
                     }
@@ -116,6 +121,7 @@ struct SongListContent: View {
             Button(role: .destructive) { pendingDelete = song } label: {
                 Label("Delete", systemImage: AppSymbol.delete)
             }
+            .tint(.red)
         }
         Button { editing = song } label: {
             Label("Edit", systemImage: AppSymbol.edit)
