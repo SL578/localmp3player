@@ -21,7 +21,7 @@ struct ImportReviewView: View {
                     }
                     .onDelete { coordinator.removeDrafts(atOffsets: $0) }
                 } footer: {
-                    Text("Titles and artists are read from the file's own tags first, then guessed from the filename. Tap any row to correct it.")
+                    Text("Titles and artists come from the file's own tags where it has them, and from the filename otherwise. Tags written by a video downloader are tidied up first. Tap any row to correct it.")
                 }
                 .listRowBackground(theme.surface)
             }

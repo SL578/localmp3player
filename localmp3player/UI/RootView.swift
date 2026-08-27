@@ -79,6 +79,14 @@ struct RootView: View {
             }
         }
         .environmentObject(importCoordinator)
+        // Files shared or opened into the app from elsewhere. The Library tab is
+        // selected first because the review sheet hangs off `LibraryView`: the
+        // panes are all alive behind an opacity change, and presenting a sheet
+        // from one that isn't the visible pane puts it up over the wrong screen.
+        .onOpenURL { url in
+            tab = .library
+            importCoordinator.accept(externalURL: url)
+        }
         .sheet(isPresented: $showingNowPlaying) {
             NavigationStack {
                 NowPlayingView(showsDoneButton: true)

@@ -24,12 +24,17 @@ struct ImportDraft: Identifiable {
         case embedded
         case filename
         case mixed
+        /// Tags written by a video downloader, tidied up. Named separately
+        /// because it is the one source that is a *guess* about a tag rather
+        /// than the tag itself, and the review sheet should say so.
+        case cleanedVideoTags
 
         var label: String {
             switch self {
             case .embedded: return "From file tags"
             case .filename: return "From filename"
             case .mixed: return "Tags + filename"
+            case .cleanedVideoTags: return "Cleaned from video tags"
             }
         }
     }
@@ -64,6 +69,9 @@ final class ImportCoordinator: ObservableObject {
     private var batchReplaceAll = false
     private var batchKeepAll = false
     private var duplicateContinuation: CheckedContinuation<DuplicateDecision, Never>?
+    /// URLs arriving from outside the app, gathered until they stop coming.
+    private var externalQueue: [URL] = []
+    private var externalDrain: Task<Void, Never>?
 
     init(context: NSManagedObjectContext) {
         self.context = context
@@ -79,7 +87,53 @@ final class ImportCoordinator: ObservableObject {
         batchKeepAll = false
         discardAllStaged()
         drafts = []
-        phase = .scanning(completed: 0, total: urls.count)
+        stagingFailureCount = 0
+        await addToStaging(urls)
+    }
+
+    /// Files handed to the app from outside it — the share sheet, another app's
+    /// "Open in", or a tap on an audio file in Files.
+    ///
+    /// iOS delivers these one URL per callback even when several were shared
+    /// together, so they are collected for a beat before anything is staged.
+    /// Without that, sharing four songs opened the review sheet four times, each
+    /// one throwing away the last.
+    func accept(externalURL url: URL) {
+        externalQueue.append(url)
+        externalDrain?.cancel()
+        externalDrain = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            await self?.drainExternalQueue()
+        }
+    }
+
+    private func drainExternalQueue() async {
+        let urls = externalQueue
+        externalQueue = []
+        externalDrain = nil
+        guard !urls.isEmpty else { return }
+
+        if phase == .reviewing {
+            // A second share while the sheet is open joins the list rather than
+            // replacing it.
+            await addToStaging(urls)
+        } else {
+            await stage(urls: urls)
+        }
+    }
+
+    /// Reads each URL into a draft and appends the result to whatever is already
+    /// being reviewed.
+    ///
+    /// The scanning phase is only entered when nothing is on screen yet. Setting
+    /// it while the review sheet is up would make `isPresentingReview` false for
+    /// the duration, and the sheet's dismissal binding reads that as the user
+    /// closing the sheet — which calls `cancelReview` and discards every draft,
+    /// including the ones being added.
+    private func addToStaging(_ urls: [URL]) async {
+        let showsProgress = phase != .reviewing
+        if showsProgress { phase = .scanning(completed: 0, total: urls.count) }
 
         var staged: [ImportDraft] = []
         var failed = 0
@@ -89,13 +143,15 @@ final class ImportCoordinator: ObservableObject {
             } else {
                 failed += 1
             }
-            phase = .scanning(completed: index + 1, total: urls.count)
+            if showsProgress { phase = .scanning(completed: index + 1, total: urls.count) }
         }
-        drafts = staged
-        stagingFailureCount = failed
-        phase = staged.isEmpty ? .idle : .reviewing
-        if staged.isEmpty, failed > 0 {
-            lastImportSummary = "Couldn\u{2019}t read \(failed) file\(failed == 1 ? "" : "s")"
+        drafts += staged
+        stagingFailureCount += failed
+        phase = drafts.isEmpty ? .idle : .reviewing
+        if drafts.isEmpty, stagingFailureCount > 0 {
+            let count = stagingFailureCount
+            lastImportSummary = "Couldn\u{2019}t read \(count) file\(count == 1 ? "" : "s")"
+            stagingFailureCount = 0
         }
     }
 
@@ -109,14 +165,32 @@ final class ImportCoordinator: ObservableObject {
         let embedded = await MetadataExtractor.read(from: localURL)
         let parsed = FilenameParser.parse(filename: filename)
 
-        let title = embedded.title ?? parsed.title
-        let artist = embedded.artist ?? parsed.artist ?? "Unknown Artist"
-
+        let title: String
+        let artist: String
         let source: ImportDraft.MetadataSource
-        switch (embedded.title != nil, embedded.artist != nil) {
-        case (true, true): source = .embedded
-        case (false, false): source = .filename
-        default: source = .mixed
+
+        if embedded.isVideoDownload, let videoTitle = embedded.title {
+            // These tags aren't a song and an artist: the title frame holds a
+            // whole video title and the artist frame holds the channel that
+            // uploaded it. Taking them at face value is what produced
+            // "Tchaikovsky - The Nutcracker Suite, Op 71a" by "avrilfan2213".
+            // The same cleanup a filename gets applies, on better input — the
+            // tag still has the characters the filesystem made the name drop.
+            let cleaned = FilenameParser.parse(videoTitle: videoTitle)
+            title = cleaned.title
+            // An artist named inside the title outranks the channel name: a
+            // video called "Tchaikovsky – Swan Lake Suite" says who wrote it,
+            // and the orchestra's YouTube account doesn't.
+            artist = cleaned.artist ?? embedded.artist ?? parsed.artist ?? "Unknown Artist"
+            source = .cleanedVideoTags
+        } else {
+            title = embedded.title ?? parsed.title
+            artist = embedded.artist ?? parsed.artist ?? "Unknown Artist"
+            switch (embedded.title != nil, embedded.artist != nil) {
+            case (true, true): source = .embedded
+            case (false, false): source = .filename
+            default: source = .mixed
+            }
         }
 
         return ImportDraft(

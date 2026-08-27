@@ -3,3 +3,6 @@ xcuserdata/
 *.xcuserstate
 build/
 DerivedData/
+
+# Local audio used for import testing — not ours to redistribute, and large.
+testSongs/

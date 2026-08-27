@@ -31,8 +31,38 @@ enum AudioFileStore {
 
     // MARK: - Staging
 
-    /// Copies a picked file out of the system's temporary Inbox immediately, while
-    /// the URL is still guaranteed valid, and returns its Documents-relative path.
+    /// Where a URL handed to the app came from, which decides whether the app is
+    /// allowed to delete it once its bytes are safely copied.
+    ///
+    /// This used to be assumed rather than asked. Every incoming URL came from
+    /// the document picker in `asCopy: true` mode, so every incoming URL was a
+    /// throwaway copy and deleting it unconditionally was right. Accepting files
+    /// shared in from other apps broke that assumption: with
+    /// `LSSupportsOpeningDocumentsInPlace`, a file shared from Files arrives as
+    /// a reference to the user's actual document, and the same line of code
+    /// would have deleted the original off their device.
+    enum Origin {
+        /// A copy the system made for the app — the picker's temporary copy, or
+        /// the `Documents/Inbox` drop a share creates. Nobody else will ever
+        /// look at it again.
+        case systemCopy
+        /// A file that still belongs to the user somewhere else on the device.
+        /// Read it, never touch it.
+        case userFile
+
+        /// Only two locations are ever treated as disposable, and both are ones
+        /// the system created for this app. Anything else is the user's.
+        static func of(_ url: URL) -> Origin {
+            let path = url.standardizedFileURL.path
+            let inbox = documentsDirectory.appendingPathComponent("Inbox", isDirectory: true)
+                .standardizedFileURL.path
+            let temporary = FileManager.default.temporaryDirectory.standardizedFileURL.path
+            return path.hasPrefix(inbox) || path.hasPrefix(temporary) ? .systemCopy : .userFile
+        }
+    }
+
+    /// Copies an incoming file out of wherever the system put it, while the URL
+    /// is still guaranteed valid, and returns its Documents-relative path.
     static func stageFile(at source: URL) throws -> (stagedPath: String, fileSize: Int64) {
         let scoped = source.startAccessingSecurityScopedResource()
         defer { if scoped { source.stopAccessingSecurityScopedResource() } }
@@ -43,14 +73,16 @@ enum AudioFileStore {
         } catch {
             throw StoreError.copyFailed(underlying: error)
         }
-        // Clear the picker's Inbox copy now that we own a copy of our own, rather
-        // than waiting on the system's ~2 minute reclaim. Left in place, a second
-        // pick of the *same* source file before that reclaim ran found the old
-        // Inbox copy still there and avoided the name collision by renaming the
-        // new one to "<name> 2.mp3" — which the parser correctly read as a
-        // different title, so re-importing the same file back-to-back silently
-        // produced a new "duplicate" instead of matching the existing song.
-        try? FileManager.default.removeItem(at: source)
+        // Clear the system's copy now that we own one of our own, rather than
+        // waiting on the ~2 minute reclaim. Left in place, a second pick of the
+        // *same* source file before that reclaim ran found the old copy still
+        // there and avoided the name collision by renaming the new one to
+        // "<name> 2.mp3" — which the parser correctly read as a different title,
+        // so re-importing the same file back-to-back silently produced a new
+        // "duplicate" instead of matching the existing song.
+        if Origin.of(source) == .systemCopy {
+            try? FileManager.default.removeItem(at: source)
+        }
         let size = (try? destination.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         return ("Staging/" + destination.lastPathComponent, Int64(size))
     }
