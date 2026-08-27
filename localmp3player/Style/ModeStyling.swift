@@ -41,6 +41,20 @@ extension View {
         }
     }
 
+    /// A symbol that swaps between two names with no transition at all.
+    ///
+    /// SF Symbols cross-fade by default when the name behind an `Image` changes,
+    /// and the play/pause glyph is the one place in the app where that is felt
+    /// rather than seen: the button is the direct response to a tap, so a fade
+    /// reads as the app hesitating. `contentTransition(.identity)` turns off the
+    /// symbol's own interpolation and the nil animation covers any transaction
+    /// the change is swept up in, which is why both are stated. Not routed
+    /// through `UIMode`: this is instant in *both* modes on purpose.
+    func instantSymbolSwap<V: Equatable>(value: V) -> some View {
+        contentTransition(.identity)
+            .animation(nil, value: value)
+    }
+
     @ViewBuilder
     func modeCard(_ mode: UIMode, theme: AppTheme) -> some View {
         if mode.usesMaterials {

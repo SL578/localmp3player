@@ -24,6 +24,7 @@ struct MiniPlayerBar: View {
                     .font(.title3)
                     .frame(width: 32, height: 32)
                     .foregroundStyle(theme.primaryText)
+                    .instantSymbolSwap(value: playback.isPlaying)
             }
             .buttonStyle(.plain)
             Button { playback.next() } label: {
@@ -56,9 +57,6 @@ struct NowPlayingView: View {
     @EnvironmentObject private var playback: PlaybackController
 
     var showsDoneButton = false
-
-    @State private var scrubTime: Double = 0
-    @State private var isScrubbing = false
 
     var body: some View {
         ScrollView {
@@ -114,26 +112,12 @@ struct NowPlayingView: View {
     }
 
     private var progress: some View {
-        VStack(spacing: 4) {
-            Slider(
-                value: Binding(
-                    get: { isScrubbing ? scrubTime : playback.currentTime },
-                    set: { scrubTime = $0 }
-                ),
-                in: 0...max(playback.duration, 1),
-                onEditingChanged: { editing in
-                    isScrubbing = editing
-                    if !editing { playback.seek(to: scrubTime) }
-                }
-            )
-            HStack {
-                Text(TimeFormatting.duration(isScrubbing ? scrubTime : playback.currentTime))
-                Spacer()
-                Text(TimeFormatting.duration(playback.duration))
-            }
-            .font(.caption.monospacedDigit())
-            .secondaryText()
-        }
+        ScrubBar(
+            currentTime: playback.currentTime,
+            duration: playback.duration,
+            trackID: playback.currentSong?.id,
+            onSeek: { playback.seek(to: $0) }
+        )
     }
 
     private var transportControls: some View {
@@ -149,6 +133,7 @@ struct NowPlayingView: View {
                 Image(systemName: playback.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 62))
                     .foregroundStyle(theme.accent)
+                    .instantSymbolSwap(value: playback.isPlaying)
             }
             Button { playback.next() } label: {
                 Image(systemName: "forward.fill")
@@ -212,6 +197,7 @@ struct NowPlayingView: View {
                                 .font(.caption)
                                 .foregroundStyle(.tint)
                                 .frame(width: 16)
+                                .instantSymbolSwap(value: playback.isPlaying)
                         } else {
                             Text("\(index + 1)")
                                 .font(.caption.monospacedDigit())
