@@ -35,6 +35,8 @@ enum AppTab: String, CaseIterable, Identifiable {
 /// starts restructured the view tree, which reset the selected tab back to
 /// Library mid-navigation.
 struct RootView: View {
+    @Environment(\.managedObjectContext) private var context
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.uiMode) private var uiMode
     @Environment(\.theme) private var theme
     @EnvironmentObject private var playback: PlaybackController
@@ -79,17 +81,36 @@ struct RootView: View {
             }
         }
         .environmentObject(importCoordinator)
-        // Files shared or opened into the app from elsewhere. The Library tab is
-        // selected first because the review sheet hangs off `LibraryView`: the
-        // panes are all alive behind an opacity change, and presenting a sheet
-        // from one that isn't the visible pane puts it up over the wrong screen.
-        .onOpenURL { url in
-            tab = .library
-            importCoordinator.accept(externalURL: url)
+        // Cover art for anything imported before art was stored at full size.
+        // Not a setting and not a prompt — it has one right answer, so it just
+        // happens, once, and skips a library that is already current.
+        .task { await ArtworkUpgrade.runIfNeeded(in: context) }
+        // Files shared or opened into the app from elsewhere. Read from
+        // `ExternalURLInbox` rather than `onOpenURL`, which hands over one URL
+        // for a whole multi-file share — see `SceneDelegate`.
+        .onReceive(NotificationCenter.default.publisher(for: ExternalURLInbox.didReceive)) { _ in
+            collectSharedFiles()
+        }
+        // Launch, and coming back to the app afterwards. Both are asked rather
+        // than only the notification, because the share extension leaves its
+        // files in the shared inbox whether or not opening the app took — and a
+        // share that launched the app is delivered before this view exists to be
+        // notified at all.
+        .task { collectSharedFiles() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { collectSharedFiles() }
+        }
+        // The review sheet hangs off `LibraryView`, and every pane is alive
+        // behind an opacity change — presenting from one that isn't visible puts
+        // the sheet over the wrong screen. Keyed off the phase rather than off
+        // the arrival of URLs, so it holds for files that reached the app
+        // through the shared inbox without a URL of their own.
+        .onChange(of: importCoordinator.phase) { _, phase in
+            if phase == .reviewing { tab = .library }
         }
         .sheet(isPresented: $showingNowPlaying) {
             NavigationStack {
-                NowPlayingView(showsDoneButton: true)
+                NowPlayingView()
             }
             .environmentObject(playback)
             .environment(\.uiMode, uiMode)
@@ -98,6 +119,13 @@ struct RootView: View {
             .foregroundStyle(theme.primaryText, theme.secondaryText)
             .modeTransactions(uiMode)
         }
+    }
+
+    /// Hands over anything that arrived as a URL and asks the coordinator to
+    /// look in the inboxes as well. Called with nothing to hand over on an
+    /// ordinary launch, which costs two directory reads and finds nothing.
+    private func collectSharedFiles() {
+        importCoordinator.accept(externalURLs: ExternalURLInbox.take())
     }
 
     /// Tapping the tab you are already on takes that tab back to its own root —

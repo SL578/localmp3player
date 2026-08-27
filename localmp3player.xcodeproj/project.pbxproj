@@ -6,8 +6,37 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		2DAC510B303BF41A00B53A56 /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 2DAC5100303BF41A00B53A56 /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		2DAC510C303BF41A00B53A56 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 2DAC501E303BF41A00B53A56 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2DAC5106303BF41A00B53A56;
+			remoteInfo = ShareExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		2DAC510A303BF41A00B53A56 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				2DAC510B303BF41A00B53A56 /* ShareExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		2DAC5026303BF41A00B53A56 /* localmp3player.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = localmp3player.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2DAC5100303BF41A00B53A56 /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -16,10 +45,27 @@
 			path = localmp3player;
 			sourceTree = "<group>";
 		};
+		2DAC5101303BF41A00B53A56 /* ShareExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ShareExtension;
+			sourceTree = "<group>";
+		};
+		2DAC5102303BF41A00B53A56 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		2DAC5023303BF41A00B53A56 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2DAC5104303BF41A00B53A56 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -33,6 +79,8 @@
 			isa = PBXGroup;
 			children = (
 				2DAC5028303BF41A00B53A56 /* localmp3player */,
+				2DAC5102303BF41A00B53A56 /* Shared */,
+				2DAC5101303BF41A00B53A56 /* ShareExtension */,
 				2DAC5027303BF41A00B53A56 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,6 +89,7 @@
 			isa = PBXGroup;
 			children = (
 				2DAC5026303BF41A00B53A56 /* localmp3player.app */,
+				2DAC5100303BF41A00B53A56 /* ShareExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -55,13 +104,16 @@
 				2DAC5022303BF41A00B53A56 /* Sources */,
 				2DAC5023303BF41A00B53A56 /* Frameworks */,
 				2DAC5024303BF41A00B53A56 /* Resources */,
+				2DAC510A303BF41A00B53A56 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				2DAC510D303BF41A00B53A56 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				2DAC5028303BF41A00B53A56 /* localmp3player */,
+				2DAC5102303BF41A00B53A56 /* Shared */,
 			);
 			name = localmp3player;
 			packageProductDependencies = (
@@ -69,6 +121,29 @@
 			productName = localmp3player;
 			productReference = 2DAC5026303BF41A00B53A56 /* localmp3player.app */;
 			productType = "com.apple.product-type.application";
+		};
+		2DAC5106303BF41A00B53A56 /* ShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2DAC5107303BF41A00B53A56 /* Build configuration list for PBXNativeTarget "ShareExtension" */;
+			buildPhases = (
+				2DAC5103303BF41A00B53A56 /* Sources */,
+				2DAC5104303BF41A00B53A56 /* Frameworks */,
+				2DAC5105303BF41A00B53A56 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				2DAC5101303BF41A00B53A56 /* ShareExtension */,
+				2DAC5102303BF41A00B53A56 /* Shared */,
+			);
+			name = ShareExtension;
+			packageProductDependencies = (
+			);
+			productName = ShareExtension;
+			productReference = 2DAC5100303BF41A00B53A56 /* ShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -81,6 +156,9 @@
 				LastUpgradeCheck = 2660;
 				TargetAttributes = {
 					2DAC5025303BF41A00B53A56 = {
+						CreatedOnToolsVersion = 26.6;
+					};
+					2DAC5106303BF41A00B53A56 = {
 						CreatedOnToolsVersion = 26.6;
 					};
 				};
@@ -100,12 +178,20 @@
 			projectRoot = "";
 			targets = (
 				2DAC5025303BF41A00B53A56 /* localmp3player */,
+				2DAC5106303BF41A00B53A56 /* ShareExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		2DAC5024303BF41A00B53A56 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2DAC5105303BF41A00B53A56 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -122,7 +208,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		2DAC5103303BF41A00B53A56 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		2DAC510D303BF41A00B53A56 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2DAC5106303BF41A00B53A56 /* ShareExtension */;
+			targetProxy = 2DAC510C303BF41A00B53A56 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		2DAC502F303BF41B00B53A56 /* Debug */ = {
@@ -301,6 +402,70 @@
 			};
 			name = Release;
 		};
+		2DAC5108303BF41A00B53A56 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShareExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3HV3R6K698;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "ShareExtension-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lin.localmp3player.ShareExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		2DAC5109303BF41A00B53A56 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShareExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3HV3R6K698;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "ShareExtension-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lin.localmp3player.ShareExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -318,6 +483,15 @@
 			buildConfigurations = (
 				2DAC5032303BF41B00B53A56 /* Debug */,
 				2DAC5033303BF41B00B53A56 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		2DAC5107303BF41A00B53A56 /* Build configuration list for PBXNativeTarget "ShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2DAC5108303BF41A00B53A56 /* Debug */,
+				2DAC5109303BF41A00B53A56 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

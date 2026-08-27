@@ -91,15 +91,19 @@ final class ImportCoordinator: ObservableObject {
         await addToStaging(urls)
     }
 
-    /// Files handed to the app from outside it — the share sheet, another app's
-    /// "Open in", or a tap on an audio file in Files.
+    /// Files handed to the app from outside it — the share extension, another
+    /// app's "Open in", or a tap on an audio file in Files.
     ///
-    /// iOS delivers these one URL per callback even when several were shared
-    /// together, so they are collected for a beat before anything is staged.
-    /// Without that, sharing four songs opened the review sheet four times, each
-    /// one throwing away the last.
-    func accept(externalURL url: URL) {
-        externalQueue.append(url)
+    /// Not every URL here is a file. The share extension's `localplayer://import`
+    /// is a nudge, not a payload: what it is announcing is already sitting in the
+    /// shared inbox, which the drain sweeps anyway.
+    ///
+    /// Delivery is collected for a beat before anything is staged, because how
+    /// many callbacks a share produces is not something the app gets to know.
+    /// Sometimes it is one per file, and staging each on arrival opened the
+    /// review sheet once per file, each throwing away the last.
+    func accept(externalURLs urls: [URL]) {
+        externalQueue += urls.filter(\.isFileURL)
         externalDrain?.cancel()
         externalDrain = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(400))
@@ -108,10 +112,25 @@ final class ImportCoordinator: ObservableObject {
         }
     }
 
+    /// Gathers everything that could have arrived, from all three routes, and
+    /// stages it as one batch.
+    ///
+    /// The announced URLs cover a file opened in place — a tap on a song in
+    /// Files, which never lands in either inbox. `Documents/Inbox` is where iOS
+    /// drops a copy when another app hands one over. The shared inbox is where
+    /// the share extension puts a whole multi-file selection. De-duplicated by
+    /// path, because a single share can show up in more than one of them.
     private func drainExternalQueue() async {
-        let urls = externalQueue
+        let announced = externalQueue
         externalQueue = []
         externalDrain = nil
+
+        var seen = Set<String>()
+        var urls: [URL] = []
+        for url in announced + AudioFileStore.pendingInboxFiles() + SharedImportInbox.pendingFiles()
+        where seen.insert(url.standardizedFileURL.path).inserted {
+            urls.append(url)
+        }
         guard !urls.isEmpty else { return }
 
         if phase == .reviewing {

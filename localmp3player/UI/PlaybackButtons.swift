@@ -10,12 +10,8 @@ struct ShufflePlayButton: View {
     let songs: () -> [Song]
 
     var body: some View {
-        Button {
+        ToolbarGlyph("Shuffle play \(sourceName)", systemImage: "shuffle") {
             playback.shufflePlay(songs: songs(), sourceName: sourceName)
-        } label: {
-            Label("Shuffle Play", systemImage: "shuffle")
         }
-        .accessibilityLabel("Shuffle play \(sourceName)")
     }
 }
-

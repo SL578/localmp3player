@@ -12,4 +12,23 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         AudioFileStore.clearStaging()
         return true
     }
+
+    /// Installs `SceneDelegate` on the app's own window scene. It is the only
+    /// place `scene(_:openURLContexts:)` — the whole of a multi-file share —
+    /// can be heard from. CarPlay keeps the configuration the Info.plist scene
+    /// manifest names for it.
+    func application(
+        _ application: UIApplication,
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        let configuration = UISceneConfiguration(
+            name: connectingSceneSession.configuration.name,
+            sessionRole: connectingSceneSession.role
+        )
+        if connectingSceneSession.role == .windowApplication {
+            configuration.delegateClass = SceneDelegate.self
+        }
+        return configuration
+    }
 }

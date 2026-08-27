@@ -125,6 +125,7 @@ struct TagsView: View {
                 }
                 selection.removeAll()
             }
+            .toolbarTint()
             .disabled(tags.isEmpty)
         }
         if isSelecting {
@@ -134,28 +135,21 @@ struct TagsView: View {
                 Button(allSelected ? "Select None" : "Select All") {
                     selection = allSelected ? [] : visible
                 }
+                .toolbarTint()
                 .disabled(visible.isEmpty)
             }
         }
         ToolbarItem(placement: .topBarTrailing) {
-            Button { editorTarget = .new } label: { Image(systemName: "plus") }
+            ToolbarGlyph("New Tag", systemImage: "plus") { editorTarget = .new }
         }
     }
 
     private var selectionBar: some View {
-        HStack {
-            Text("\(selection.count) selected")
-                .font(.subheadline)
-            Spacer()
-            Button(role: .destructive) {
+        SelectionBar(count: selection.count) {
+            SelectionAction("Delete", systemImage: AppSymbol.delete, role: .destructive) {
                 confirmingDelete = true
-            } label: {
-                Label("Delete", systemImage: AppSymbol.delete)
             }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-        .modePanelBackground(uiMode, theme: theme)
     }
 
     private func deleteSelected() {
@@ -311,11 +305,9 @@ struct TagDetailView: View {
         .toolbar {
             if isEditing {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button {
+                    ToolbarGlyph("Done", systemImage: AppSymbol.done) {
                         withAnimation(uiMode.animation) { isEditing = false }
                         selection.removeAll()
-                    } label: {
-                        Label("Done", systemImage: AppSymbol.done)
                     }
                 }
                 ToolbarItem(placement: .topBarLeading) {
@@ -324,6 +316,7 @@ struct TagDetailView: View {
                     Button(allSelected ? "Select None" : "Select All") {
                         selection = allSelected ? [] : visible
                     }
+                    .toolbarTint()
                     .disabled(visible.isEmpty)
                 }
             }
@@ -335,23 +328,20 @@ struct TagDetailView: View {
                     ShufflePlayButton(sourceName: tag.displayName) { taggedSongs() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showingSongPicker = true } label: {
-                        Image(systemName: "plus")
+                    ToolbarGlyph("Add songs to this tag", systemImage: "plus") {
+                        showingSongPicker = true
                     }
-                    .accessibilityLabel("Add songs to this tag")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
+                    ToolbarGlyph("Edit", systemImage: AppSymbol.edit) {
                         withAnimation(uiMode.animation) { isEditing = true }
-                    } label: {
-                        Label("Edit", systemImage: AppSymbol.edit)
                     }
                 }
             } else {
                 // Name and color are both "what this tag is", so both live in
                 // edit mode and neither takes up room the rest of the time.
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { renaming = true } label: { Label("Rename", systemImage: AppSymbol.rename) }
+                    ToolbarGlyph("Rename", systemImage: AppSymbol.rename) { renaming = true }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showingColorPicker = true } label: {
@@ -411,23 +401,16 @@ struct TagDetailView: View {
     /// No Delete here on purpose: removing songs from a tag never touches the
     /// library, so this bar has nothing destructive on it.
     private var selectionBar: some View {
-        HStack(spacing: 4) {
-            Text("\(selection.count) selected")
-                .font(.subheadline)
-                .lineLimit(1)
-            Spacer(minLength: 8)
+        let liked = selectedSongs().allLiked
+        return SelectionBar(count: selection.count) {
             SelectionAction("Add to Playlist", systemImage: "text.badge.plus") { showingPlaylistPicker = true }
-            SelectionAction(allSelectionLiked ? "Unlike" : "Like",
-                            systemImage: allSelectionLiked ? "heart.slash" : "heart") {
-                setLiked(!allSelectionLiked)
+            SelectionAction(liked ? "Unlike" : "Like", systemImage: liked ? "heart.slash" : "heart") {
+                selectedSongs().setLiked(!liked)
             }
             SelectionAction("Remove from Tag", systemImage: "minus.circle", role: .destructive) {
                 removeSelectedFromTag()
             }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-        .modePanelBackground(uiMode, theme: theme)
     }
 
     private func taggedSongs() -> [Song] {
@@ -436,16 +419,6 @@ struct TagDetailView: View {
 
     private func selectedSongs() -> [Song] {
         taggedSongs().filter { selection.contains($0.id) }
-    }
-
-    private var allSelectionLiked: Bool {
-        let songs = selectedSongs()
-        return !songs.isEmpty && songs.allSatisfy(\.isLiked)
-    }
-
-    private func setLiked(_ liked: Bool) {
-        for song in selectedSongs() { song.isLiked = liked }
-        PersistenceController.shared.save()
     }
 
     private func removeSelectedFromTag() {

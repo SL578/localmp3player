@@ -25,6 +25,30 @@ enum AudioFileStore {
     /// Holds picked files between the document picker and a committed import.
     static var stagingDirectory: URL { directory(named: "Staging") }
 
+    /// Where iOS drops files handed to the app from outside it. Created by the
+    /// system, not by us, so it is read without being made first.
+    static var inboxDirectory: URL {
+        documentsDirectory.appendingPathComponent("Inbox", isDirectory: true)
+    }
+
+    /// Everything currently sitting in the system's drop box for this app.
+    ///
+    /// Sharing several files at once puts *all* of them here, but the app is only
+    /// told about them through `onOpenURL`, which does not reliably deliver one
+    /// callback per file — share four songs and one URL arrives. Reading the
+    /// directory is the only account of the whole batch that doesn't depend on
+    /// how many callbacks the system decided to make.
+    static func pendingInboxFiles() -> [URL] {
+        let contents = (try? FileManager.default.contentsOfDirectory(
+            at: inboxDirectory,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        return contents.filter {
+            (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+        }
+    }
+
     static func absoluteURL(for relativePath: String) -> URL {
         documentsDirectory.appendingPathComponent(relativePath)
     }
@@ -50,14 +74,20 @@ enum AudioFileStore {
         /// Read it, never touch it.
         case userFile
 
-        /// Only two locations are ever treated as disposable, and both are ones
-        /// the system created for this app. Anything else is the user's.
+        /// Only locations this app or the system made for it are treated as
+        /// disposable. Anything else is the user's.
         static func of(_ url: URL) -> Origin {
             let path = url.standardizedFileURL.path
-            let inbox = documentsDirectory.appendingPathComponent("Inbox", isDirectory: true)
-                .standardizedFileURL.path
-            let temporary = FileManager.default.temporaryDirectory.standardizedFileURL.path
-            return path.hasPrefix(inbox) || path.hasPrefix(temporary) ? .systemCopy : .userFile
+            var disposable = [
+                inboxDirectory.standardizedFileURL.path,
+                FileManager.default.temporaryDirectory.standardizedFileURL.path,
+            ]
+            // The share extension's copies. They exist only to be handed over,
+            // and nothing reads them again once they are staged.
+            if let shared = SharedImportInbox.directory {
+                disposable.append(shared.standardizedFileURL.path)
+            }
+            return disposable.contains(where: path.hasPrefix) ? .systemCopy : .userFile
         }
     }
 
@@ -129,18 +159,5 @@ enum AudioFileStore {
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         }
         return directory
-    }
-
-    private static func uniqueDestination(for filename: String, in directory: URL) -> URL {
-        let base = (filename as NSString).deletingPathExtension
-        let ext = (filename as NSString).pathExtension
-        var candidate = directory.appendingPathComponent(filename)
-        var counter = 1
-        while FileManager.default.fileExists(atPath: candidate.path) {
-            let name = ext.isEmpty ? "\(base)-\(counter)" : "\(base)-\(counter).\(ext)"
-            candidate = directory.appendingPathComponent(name)
-            counter += 1
-        }
-        return candidate
     }
 }

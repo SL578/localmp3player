@@ -352,3 +352,30 @@ private struct ContentHeightKey: PreferenceKey {
         value = max(value, nextValue())
     }
 }
+
+struct ScanningOverlay: View {
+    @Environment(\.uiMode) private var uiMode
+    @Environment(\.theme) private var theme
+    let completed: Int
+    let total: Int
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ProgressView(value: Double(completed), total: Double(max(total, 1)))
+                .frame(width: 160)
+            Text("Reading \(completed) of \(total)")
+                .font(.footnote)
+                .secondaryText()
+        }
+        .padding(20)
+        .modeCard(uiMode, theme: theme)
+    }
+}
+
+#Preview {
+    LibraryView()
+        .environment(\.managedObjectContext, PersistenceController.preview.viewContext)
+        .environmentObject(AppSettings())
+        .environmentObject(PlaybackController.shared)
+        .environmentObject(ImportCoordinator(context: PersistenceController.preview.viewContext))
+}

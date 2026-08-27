@@ -46,17 +46,19 @@ struct MiniPlayerBar: View {
     }
 }
 
-/// The full player. Presented as a sheet from the mini player, and pushed onto
-/// the current navigation stack when you tap a song, so the queue you see is
-/// always exactly the list you played from.
+/// The full player. There is exactly one way in — the mini player bar — so
+/// there is exactly one presentation and one design. Tapping a song used to
+/// push a second copy onto whichever stack it was tapped from, which arrived
+/// from a different edge and exited through a different control.
+///
+/// Its dismiss control is a leading chevron rather than a trailing Done, to read
+/// as "back to where I was" the way every other screen in the app does.
 struct NowPlayingView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
     @Environment(\.managedObjectContext) private var context
     @Environment(\.uiMode) private var uiMode
     @EnvironmentObject private var playback: PlaybackController
-
-    var showsDoneButton = false
 
     var body: some View {
         ScrollView {
@@ -86,10 +88,8 @@ struct NowPlayingView: View {
         .navigationBarTitleDisplayMode(.inline)
         .modeNavigationChrome(uiMode, theme: theme)
         .toolbar {
-            if showsDoneButton {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
+            ToolbarItem(placement: .topBarLeading) {
+                ToolbarGlyph("Close player", systemImage: "chevron.left") { dismiss() }
             }
         }
     }

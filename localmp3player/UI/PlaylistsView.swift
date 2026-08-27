@@ -199,6 +199,7 @@ struct PlaylistsView: View {
                 }
                 selection.removeAll()
             }
+            .toolbarTint()
             .disabled(smartPlaylists.isEmpty && playlists.isEmpty)
         }
         if isSelecting {
@@ -208,25 +209,18 @@ struct PlaylistsView: View {
                 Button(allSelected ? "Select None" : "Select All") {
                     selection = allSelected ? [] : visible
                 }
+                .toolbarTint()
                 .disabled(visible.isEmpty)
             }
         }
     }
 
     private var selectionBar: some View {
-        HStack {
-            Text("\(selection.count) selected")
-                .font(.subheadline)
-            Spacer()
-            Button(role: .destructive) {
+        SelectionBar(count: selection.count) {
+            SelectionAction("Delete", systemImage: AppSymbol.delete, role: .destructive) {
                 confirmingDelete = true
-            } label: {
-                Label("Delete", systemImage: AppSymbol.delete)
             }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-        .modePanelBackground(uiMode, theme: theme)
     }
 
     private func deleteSelected() {
@@ -412,7 +406,6 @@ struct PlaylistDetailView: View {
     @EnvironmentObject private var playback: PlaybackController
     @ObservedObject var playlist: Playlist
     @State private var showingPicker = false
-    @State private var showingPlayer = false
     /// Owned here rather than left to `EditButton` so the rename action can
     /// appear alongside Done while the list is being edited.
     @State private var editMode: EditMode = .inactive
@@ -431,18 +424,13 @@ struct PlaylistDetailView: View {
             ForEach(playlist.orderedEntries) { entry in
                 if let song = entry.song {
                     SongRow(song: song, isSelected: selection.contains(entry.id), isSelecting: isEditing)
+                        .likeSwipe(song) {
+                            song.isLiked.toggle()
+                            try? context.save()
+                        }
                         .listRowBackground(theme.background)
                         .contentShape(Rectangle())
                         .onTapGesture { handleTap(entry) }
-                        .swipeActions(edge: .leading) {
-                            Button {
-                                song.isLiked.toggle()
-                                try? context.save()
-                            } label: {
-                                Label(song.isLiked ? "Unlike" : "Like", systemImage: song.isLiked ? "heart.slash" : "heart")
-                            }
-                            .tint(theme.liked)
-                        }
                         .swipeActions(edge: .trailing) {
                             // Removes the song from this playlist rather than from
                             // the library, so it doesn't go through the delete
@@ -468,9 +456,6 @@ struct PlaylistDetailView: View {
         .listStyle(.plain)
         .themedScrollBackground(theme)
         .navigationTitle(playlist.name)
-        .navigationDestination(isPresented: $showingPlayer) {
-            NowPlayingView()
-        }
         // Done takes the back button's place while editing, the same as in
         // `TagDetailView` — one way out, and a bar with room for the title.
         .navigationBarBackButtonHidden(editMode.isEditing)
@@ -480,11 +465,9 @@ struct PlaylistDetailView: View {
             // tell whether the list was being edited.
             if editMode.isEditing {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button {
+                    ToolbarGlyph("Done", systemImage: AppSymbol.done) {
                         withAnimation(uiMode.animation) { editMode = .inactive }
                         selection.removeAll()
-                    } label: {
-                        Label("Done", systemImage: AppSymbol.done)
                     }
                 }
                 ToolbarItem(placement: .topBarLeading) {
@@ -493,13 +476,14 @@ struct PlaylistDetailView: View {
                     Button(allSelected ? "Select None" : "Select All") {
                         selection = allSelected ? [] : visible
                     }
+                    .toolbarTint()
                     .disabled(visible.isEmpty)
                 }
                 // Editing a playlist means its name as much as its running order,
                 // so Rename lives with the row reordering rather than behind its
                 // own permanent button.
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { renaming = true } label: { Label("Rename", systemImage: AppSymbol.rename) }
+                    ToolbarGlyph("Rename", systemImage: AppSymbol.rename) { renaming = true }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showingColorPicker = true } label: {
@@ -516,15 +500,13 @@ struct PlaylistDetailView: View {
                         .disabled(playlist.entries.isEmpty)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showingPicker = true } label: { Image(systemName: "plus") }
+                    ToolbarGlyph("Add Songs", systemImage: "plus") { showingPicker = true }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
+                    // A symbol rather than a word, so this reads as the same Edit
+                    // action the swipe on this playlist's own row offers.
+                    ToolbarGlyph("Edit", systemImage: AppSymbol.edit) {
                         withAnimation(uiMode.animation) { editMode = .active }
-                    } label: {
-                        // Symbols rather than words, so this reads as the same Edit
-                        // action the swipe on this playlist's own row offers.
-                        Label("Edit", systemImage: AppSymbol.edit)
                     }
                 }
             }
@@ -572,23 +554,16 @@ struct PlaylistDetailView: View {
 
     /// No Delete here: removing a song from a playlist never touches the library.
     private var selectionBar: some View {
-        HStack(spacing: 4) {
-            Text("\(selection.count) selected")
-                .font(.subheadline)
-                .lineLimit(1)
-            Spacer(minLength: 8)
+        let liked = selectedSongs().allLiked
+        return SelectionBar(count: selection.count) {
             SelectionAction("Add to Playlist", systemImage: "text.badge.plus") { showingPlaylistPicker = true }
-            SelectionAction(allSelectionLiked ? "Unlike" : "Like",
-                            systemImage: allSelectionLiked ? "heart.slash" : "heart") {
-                setLiked(!allSelectionLiked)
+            SelectionAction(liked ? "Unlike" : "Like", systemImage: liked ? "heart.slash" : "heart") {
+                selectedSongs().setLiked(!liked)
             }
             SelectionAction("Remove from Playlist", systemImage: "minus.circle", role: .destructive) {
                 removeSelected()
             }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-        .modePanelBackground(uiMode, theme: theme)
     }
 
     private func handleTap(_ entry: PlaylistEntry) {
@@ -610,16 +585,6 @@ struct PlaylistDetailView: View {
             .filter { seen.insert($0.id).inserted }
     }
 
-    private var allSelectionLiked: Bool {
-        let songs = selectedSongs()
-        return !songs.isEmpty && songs.allSatisfy(\.isLiked)
-    }
-
-    private func setLiked(_ liked: Bool) {
-        for song in selectedSongs() { song.isLiked = liked }
-        PersistenceController.shared.save()
-    }
-
     private func removeSelected() {
         let offsets = IndexSet(
             playlist.orderedEntries.enumerated()
@@ -639,12 +604,9 @@ struct PlaylistDetailView: View {
     private func play(from entry: PlaylistEntry) {
         let songs = playlist.songs
         guard let index = songs.firstIndex(where: { $0.id == entry.song?.id }) else { return }
+        // Play and stay put; the mini bar is the single way into the full
+        // player. The queue is still this playlist's songs and nothing else.
         playback.play(songs: songs, startingAt: index, sourceName: playlist.name)
-        // Push the player for this playlist so the queue on screen is the
-        // playlist's songs and nothing else.
-        var transaction = Transaction()
-        transaction.disablesAnimations = !uiMode.usesAnimation
-        withTransaction(transaction) { showingPlayer = true }
     }
 
     private func remove(_ entry: PlaylistEntry) {
@@ -693,8 +655,8 @@ struct SmartPlaylistDetailView: View {
             // The rule is the only thing there is to edit here, and reaching it
             // meant backing out to the list first.
             ToolbarItem(placement: .topBarTrailing) {
-                Button { editorTarget = .existing(playlist) } label: {
-                    Label("Edit Rule", systemImage: AppSymbol.edit)
+                ToolbarGlyph("Edit Rule", systemImage: AppSymbol.edit) {
+                    editorTarget = .existing(playlist)
                 }
             }
         }

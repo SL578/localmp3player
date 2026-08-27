@@ -43,3 +43,14 @@ extension Song {
         tags.remove(tag)
     }
 }
+
+extension Collection where Element == Song {
+    /// Whether a selection bar should offer Unlike rather than Like. Empty is
+    /// not "all liked": with nothing selected there is nothing to unlike.
+    var allLiked: Bool { !isEmpty && allSatisfy(\.isLiked) }
+
+    func setLiked(_ liked: Bool) {
+        for song in self { song.isLiked = liked }
+        PersistenceController.shared.save()
+    }
+}
