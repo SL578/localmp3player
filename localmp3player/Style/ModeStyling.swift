@@ -1,5 +1,16 @@
 import SwiftUI
 
+/// Which kind of navigation title a screen carries, so `modeNavigationChrome`
+/// knows whether it is allowed to pin the bar.
+///
+/// Not a styling choice — a statement of fact about the screen. It has to match
+/// the screen's actual `navigationBarTitleDisplayMode`, and getting it wrong
+/// either hides the title or lets content show through the bar.
+enum ModeTitleStyle {
+    case inline
+    case large
+}
+
 /// The single styling seam between Standard and Performance mode. Views stay
 /// identical; only these modifiers change what actually gets rendered.
 extension View {
@@ -76,22 +87,37 @@ extension View {
 
     /// Performance mode pins an opaque navigation bar so scrolling content never
     /// blurs through it. Only safe on inline titles — a visible toolbar
-    /// background hides a large navigation title on iOS 26.
+    /// background hides a large navigation title on iOS 26 — so the caller says
+    /// which kind of title it has and gets the best bar available for it.
+    ///
+    /// The two can't both be had on one screen, and the choice is made per title
+    /// style rather than app-wide because dropping `.visible` everywhere
+    /// regressed the inline screens: Now Playing's bar went clear, artwork
+    /// scrolled up into the status bar, and iOS started restyling the close
+    /// chevron against whatever pixels were behind it, in visible steps.
     @ViewBuilder
-    func modeNavigationChrome(_ mode: UIMode, theme: AppTheme) -> some View {
+    func modeNavigationChrome(
+        _ mode: UIMode,
+        theme: AppTheme,
+        title: ModeTitleStyle = .inline
+    ) -> some View {
         if mode.usesMaterials {
             self
         } else {
-            // The colour is stated, the visibility is not. Forcing `.visible`
-            // pins a background behind the bar at all times, and on iOS 26 a bar
-            // with a background hides a *large* navigation title outright — tag
-            // and smart-playlist detail screens came up with no title at all.
-            // Left to itself the bar stays clear at the top of a list, where the
-            // themed background shows through anyway and the large title is
-            // readable, and takes this colour once content scrolls under it.
-            // Either way it is a flat fill, which is all Performance mode asks
-            // for: no material is ever substituted.
-            toolbarBackground(theme.background, for: .navigationBar)
+            switch title {
+            case .inline:
+                // Pinned. Nothing ever shows through, and the bar's own buttons
+                // sit on a known colour instead of on the content behind them.
+                toolbarBackground(theme.background, for: .navigationBar)
+                    .toolbarBackground(.visible, for: .navigationBar)
+            case .large:
+                // Colour stated, visibility left alone: `.visible` here would
+                // hide the title outright. The bar is clear at the top of a
+                // list, where the themed background is behind it anyway, and
+                // takes this colour once content scrolls under it. It is a flat
+                // fill either way — no material is ever substituted.
+                toolbarBackground(theme.background, for: .navigationBar)
+            }
         }
     }
 

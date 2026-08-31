@@ -661,7 +661,7 @@ struct SmartPlaylistDetailView: View {
         )
         .navigationTitle(playlist.name)
         // Large, matching a playlist's — see `TagDetailView`.
-        .modeNavigationChrome(uiMode, theme: theme)
+        .modeNavigationChrome(uiMode, theme: theme, title: .large)
         .toolbar {
             // Shuffle only. Play All queued the same songs in the order already
             // on screen, which tapping the first row does.

@@ -300,7 +300,7 @@ struct TagDetailView: View {
         // Large, like a playlist's. An inline title shares the bar with the
         // buttons and loses to them; a large one gets its own line, which is
         // both more readable and less crowded.
-        .modeNavigationChrome(uiMode, theme: theme)
+        .modeNavigationChrome(uiMode, theme: theme, title: .large)
         // Editing owns the whole bar: Done takes the back button's place, so the
         // one way out of edit mode is the one that also settles the list. Leaving
         // both up meant five controls and a title truncated to "Ta...".
