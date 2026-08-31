@@ -44,7 +44,10 @@ final class PlaybackController: NSObject, ObservableObject {
     /// The queue in the order it will actually play (already shuffled if shuffle is on).
     @Published private(set) var queue: [Song] = []
     @Published private(set) var queueIndex: Int = 0
-    @Published var currentTime: Double = 0
+    /// The playing position, on its own object so the 1 Hz ticker doesn't
+    /// republish the controller once a second. Held as a plain `let`: see
+    /// `PlaybackClock`. Views that draw the position observe this directly.
+    let clock = PlaybackClock()
     /// Label for whatever the queue was built from, e.g. "Liked Songs".
     @Published private(set) var queueSourceName: String?
     @Published private(set) var isShuffled = false
@@ -163,7 +166,7 @@ final class PlaybackController: NSObject, ObservableObject {
 
     func previous() {
         // Matches the platform convention: restart the track unless we're near the start.
-        if currentTime > 3 {
+        if clock.currentTime > 3 {
             seek(to: 0)
             return
         }
@@ -190,7 +193,7 @@ final class PlaybackController: NSObject, ObservableObject {
     func seek(to time: Double) {
         guard let player else { return }
         player.currentTime = max(0, min(time, player.duration))
-        currentTime = player.currentTime
+        clock.currentTime = player.currentTime
         updateNowPlayingInfo()
     }
 
@@ -200,7 +203,7 @@ final class PlaybackController: NSObject, ObservableObject {
         isPlaying = false
         currentSong = nil
         queueSourceName = nil
-        currentTime = 0
+        clock.currentTime = 0
         orderedQueue = []
         queue = []
         queueIndex = 0
@@ -241,7 +244,7 @@ final class PlaybackController: NSObject, ObservableObject {
         newPlayer.prepareToPlay()
         player = newPlayer
         currentSong = song
-        currentTime = 0
+        clock.currentTime = 0
 
         if autoPlay {
             activateSession()
@@ -281,7 +284,7 @@ final class PlaybackController: NSObject, ObservableObject {
             guard let self else { return }
             Task { @MainActor in
                 guard let player = self.player else { return }
-                self.currentTime = player.currentTime
+                self.clock.currentTime = player.currentTime
             }
         }
         timer.tolerance = 0.25

@@ -112,8 +112,8 @@ struct NowPlayingView: View {
     }
 
     private var progress: some View {
-        ScrubBar(
-            currentTime: playback.currentTime,
+        ProgressSection(
+            clock: playback.clock,
             duration: playback.duration,
             trackID: playback.currentSong?.id,
             onSeek: { playback.seek(to: $0) }
@@ -225,5 +225,26 @@ struct NowPlayingView: View {
                 Divider()
             }
         }
+    }
+}
+
+/// The scrub bar and the clock it draws.
+///
+/// Split into its own view so the once-a-second tick invalidates this and
+/// nothing else. Read straight off `playback` in the player's body instead and
+/// the whole screen — artwork, labels, transport, queue — rebuilds every second.
+private struct ProgressSection: View {
+    @ObservedObject var clock: PlaybackClock
+    let duration: Double
+    let trackID: UUID?
+    let onSeek: (Double) -> Void
+
+    var body: some View {
+        ScrubBar(
+            currentTime: clock.currentTime,
+            duration: duration,
+            trackID: trackID,
+            onSeek: onSeek
+        )
     }
 }
