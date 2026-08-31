@@ -40,7 +40,10 @@ struct PlaylistsView: View {
                             }
                             .tag(playlist.id)
                             .swipeActions(edge: .trailing) {
-                                Button(role: .destructive) { pendingSmartDelete = playlist } label: {
+                                // No `role: .destructive` — see `confirmDelete`.
+                                // This only raises the prompt, so the row must not
+                                // animate away.
+                                Button { pendingSmartDelete = playlist } label: {
                                     Label("Delete", systemImage: AppSymbol.delete)
                                 }
                                 .tint(.red)
@@ -73,7 +76,10 @@ struct PlaylistsView: View {
                             }
                             .tag(playlist.id)
                             .swipeActions(edge: .trailing) {
-                                Button(role: .destructive) { pendingPlaylistDelete = playlist } label: {
+                                // No `role: .destructive` — see `confirmDelete`.
+                                // This only raises the prompt, so the row must not
+                                // animate away.
+                                Button { pendingPlaylistDelete = playlist } label: {
                                     Label("Delete", systemImage: AppSymbol.delete)
                                 }
                                 .tint(.red)

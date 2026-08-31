@@ -8,6 +8,19 @@ extension View {
     /// imported file goes with the row — and a swipe is easy to perform by
     /// accident, so nothing deletes straight off the gesture. Callers set the
     /// binding from their swipe action and do the actual work in `perform`.
+    ///
+    /// **The swipe action that sets the binding must not carry
+    /// `role: .destructive`.** The role is what tells UIKit the row is going
+    /// away, and UIKit plays its row-removal animation the moment the action
+    /// fires — before this dialog is even on screen. The row slides out and
+    /// then pops back in behind the prompt, which reads as a delete that got
+    /// undone. Setting the binding destroys nothing, so the row stays put and
+    /// `.tint(.red)` carries the meaning on its own. A full swipe still fires
+    /// the action; only the removal animation goes.
+    ///
+    /// Actions that *do* remove their row on the spot — detaching a song from
+    /// a playlist or a tag — keep the role, because there the animation is
+    /// telling the truth.
     func confirmDelete<Item>(
         _ item: Binding<Item?>,
         title: (Item) -> String,

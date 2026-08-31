@@ -41,7 +41,9 @@ struct TagsView: View {
                     .tag(tag.id)
                     .listRowBackground(theme.background)
                     .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) { pendingDelete = tag } label: {
+                        // No `role: .destructive` — see `confirmDelete`. This
+                        // only raises the prompt, so the row must not animate away.
+                        Button { pendingDelete = tag } label: {
                             Label("Delete", systemImage: AppSymbol.delete)
                         }
                         .tint(.red)

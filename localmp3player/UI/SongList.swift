@@ -118,7 +118,9 @@ struct SongListContent: View {
                 Label(label, systemImage: "minus.circle")
             }
         } else {
-            Button(role: .destructive) { pendingDelete = song } label: {
+            // No `role: .destructive` — see `confirmDelete`. This only raises
+            // the prompt, so the row must not animate away.
+            Button { pendingDelete = song } label: {
                 Label("Delete", systemImage: AppSymbol.delete)
             }
             .tint(.red)
