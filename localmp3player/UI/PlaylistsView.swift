@@ -109,6 +109,9 @@ struct PlaylistsView: View {
                 placement: .navigationBarDrawer(displayMode: .always),
                 prompt: "Playlists and smart playlists"
             )
+            // See `LibraryView` — without this the tab roots keep iOS 26's glass
+            // bar and rows blur visibly through it in Performance mode.
+            .modeNavigationChrome(uiMode, theme: theme, title: .large)
             .overlay {
                 if isSearching, filteredSmartPlaylists.isEmpty, filteredPlaylists.isEmpty {
                     ContentUnavailableView.search(text: trimmedSearch)

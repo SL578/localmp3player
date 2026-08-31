@@ -59,6 +59,9 @@ struct TagsView: View {
             .themedScrollBackground(theme)
             .navigationTitle("Tags")
             .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Tags")
+            // See `LibraryView` — without this the tab roots keep iOS 26's glass
+            // bar and rows blur visibly through it in Performance mode.
+            .modeNavigationChrome(uiMode, theme: theme, title: .large)
             .navigationDestination(item: $target) { TagDetailView(tag: $0) }
             .onChange(of: popToRoot) { target = nil }
             .environment(\.editMode, $editMode)

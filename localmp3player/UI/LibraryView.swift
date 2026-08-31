@@ -41,6 +41,11 @@ struct LibraryView: View {
                 placement: .navigationBarDrawer(displayMode: .always),
                 prompt: "Songs, artists, albums"
             )
+            // Without this the tab roots keep iOS's default bar, which on iOS 26
+            // is glass — rows blurred visibly through it while scrolling, in the
+            // mode whose whole promise is that nothing is composited through a
+            // blur. `.large` because the title is: see `ModeTitleStyle`.
+            .modeNavigationChrome(uiMode, theme: theme, title: .large)
             .toolbar { toolbarContent }
             .safeAreaInset(edge: .bottom) {
                 if isSelecting && !selection.isEmpty {
