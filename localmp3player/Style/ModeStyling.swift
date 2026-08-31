@@ -82,8 +82,16 @@ extension View {
         if mode.usesMaterials {
             self
         } else {
+            // The colour is stated, the visibility is not. Forcing `.visible`
+            // pins a background behind the bar at all times, and on iOS 26 a bar
+            // with a background hides a *large* navigation title outright — tag
+            // and smart-playlist detail screens came up with no title at all.
+            // Left to itself the bar stays clear at the top of a list, where the
+            // themed background shows through anyway and the large title is
+            // readable, and takes this colour once content scrolls under it.
+            // Either way it is a flat fill, which is all Performance mode asks
+            // for: no material is ever substituted.
             toolbarBackground(theme.background, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
         }
     }
 

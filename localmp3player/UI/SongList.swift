@@ -17,6 +17,7 @@ enum SongRemoval {
 struct SongListContent: View {
     @Environment(\.managedObjectContext) private var context
     @Environment(\.theme) private var theme
+    @Environment(\.uiMode) private var uiMode
     @EnvironmentObject private var playback: PlaybackController
 
     @FetchRequest private var fetched: FetchedResults<Song>
@@ -28,6 +29,10 @@ struct SongListContent: View {
     let isSelecting: Bool
     let sourceName: String
     let removal: SongRemoval
+    /// Bumped to send the list back to the top — the Library tab's answer to
+    /// tapping the tab you are already on. Every other tab pops a pushed screen
+    /// instead; the Library has no stack, so the top of the list is its root.
+    let scrollToTop: Int
 
     @State private var editing: Song?
     @State private var pendingDelete: Song?
@@ -37,7 +42,8 @@ struct SongListContent: View {
         selection: Binding<Set<UUID>>,
         isSelecting: Bool,
         sourceName: String,
-        removal: SongRemoval = .deleteFromLibrary
+        removal: SongRemoval = .deleteFromLibrary,
+        scrollToTop: Int = 0
     ) {
         _fetched = FetchRequest(fetchRequest: request, animation: nil)
         suppliedSongs = nil
@@ -45,6 +51,7 @@ struct SongListContent: View {
         self.isSelecting = isSelecting
         self.sourceName = sourceName
         self.removal = removal
+        self.scrollToTop = scrollToTop
     }
 
     init(
@@ -52,7 +59,8 @@ struct SongListContent: View {
         selection: Binding<Set<UUID>>,
         isSelecting: Bool,
         sourceName: String,
-        removal: SongRemoval = .deleteFromLibrary
+        removal: SongRemoval = .deleteFromLibrary,
+        scrollToTop: Int = 0
     ) {
         _fetched = FetchRequest(fetchRequest: LibraryQuery.noSongs(), animation: nil)
         suppliedSongs = songs
@@ -60,12 +68,19 @@ struct SongListContent: View {
         self.isSelecting = isSelecting
         self.sourceName = sourceName
         self.removal = removal
+        self.scrollToTop = scrollToTop
     }
 
     /// The songs currently on screen, which is what gets queued on tap.
     var visibleSongs: [Song] { suppliedSongs ?? Array(fetched) }
 
     var body: some View {
+        ScrollViewReader { proxy in
+            list.onChange(of: scrollToTop) { returnToTop(proxy) }
+        }
+    }
+
+    private var list: some View {
         List {
             if visibleSongs.isEmpty {
                 ContentUnavailableView(
@@ -107,6 +122,13 @@ struct SongListContent: View {
             title: { "Delete \($0.title)?" },
             message: "The imported file is removed from the app for good."
         ) { delete($0) }
+    }
+
+    /// Nothing to scroll to on an empty list, and no animation in Performance
+    /// mode — the same rule the rest of the app follows.
+    private func returnToTop(_ proxy: ScrollViewProxy) {
+        guard let first = visibleSongs.first else { return }
+        withAnimation(uiMode.animation) { proxy.scrollTo(first.id, anchor: .top) }
     }
 
     /// Removal first, then Edit, so the destructive action stays at the outside
@@ -218,6 +240,7 @@ struct TagChipRow: View {
 /// observes the *Song*, and recolouring a tag never touches the song, so
 /// nothing in that chain invalidated the row.
 private struct TagChip: View {
+    @Environment(\.theme) private var theme
     @ObservedObject var tag: Tag
 
     var body: some View {
@@ -225,7 +248,7 @@ private struct TagChip: View {
             .font(.caption2)
             .padding(.horizontal, 6)
             .padding(.vertical, 1)
-            .background((Color(hex: tag.colorHex) ?? .gray).opacity(0.25), in: Capsule())
+            .background(tag.tint(theme).opacity(0.25), in: Capsule())
     }
 }
 

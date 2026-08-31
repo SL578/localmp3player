@@ -29,7 +29,7 @@ struct TagsView: View {
                     } label: {
                         HStack(spacing: 10) {
                             Circle()
-                                .fill(Color(hex: tag.colorHex) ?? .gray)
+                                .fill(tag.tint(theme))
                                 .frame(width: 12, height: 12)
                             Text(tag.displayName)
                             Spacer()
@@ -350,7 +350,7 @@ struct TagDetailView: View {
                     Button { showingColorPicker = true } label: {
                         // Show the tag's actual color, so the button says what it does.
                         Circle()
-                            .fill(Color(hex: tag.colorHex) ?? .gray)
+                            .fill(tag.tint(theme))
                             .frame(width: 20, height: 20)
                             .overlay(Circle().strokeBorder(.secondary.opacity(0.4), lineWidth: 1))
                     }
@@ -475,7 +475,7 @@ struct EntityColorPicker<Object: Colorable>: View {
                             .font(.caption)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background((Color(hex: object.colorHex) ?? .gray).opacity(0.25), in: Capsule())
+                            .background(object.tint(theme).opacity(0.25), in: Capsule())
                     }
                 }
                 .listRowBackground(theme.surface)
@@ -504,6 +504,10 @@ extension Binding where Value == String? {
     /// hex — a managed object or a draft — can offer a custom color with one row.
     var asColor: Binding<Color> {
         Binding<Color>(
+            // Grey, not the theme accent: this is the swatch the system picker
+            // opens on, and a `Binding` extension has no environment to read a
+            // theme from. Colours that get *displayed* fall back to the accent
+            // through `Colorable.tint(_:)`.
             get: { Color(hex: wrappedValue) ?? .gray },
             set: { wrappedValue = $0.hexString }
         )
@@ -603,7 +607,7 @@ struct BatchTagEditor: View {
                         let state = coverage[tag.id] ?? .absent
                         HStack {
                             Circle()
-                                .fill(Color(hex: tag.colorHex) ?? .gray)
+                                .fill(tag.tint(theme))
                                 .frame(width: 10, height: 10)
                             Text(tag.displayName)
                             Spacer()

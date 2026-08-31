@@ -203,7 +203,7 @@ struct ImportDraftEditor: View {
         let hex = existingTags
             .first { $0.name == Tag.canonical(name) }?
             .colorHex ?? TagPalette.suggestedHex(for: Tag.canonical(name))
-        return Color(hex: hex) ?? .gray
+        return Color(hex: hex) ?? theme.accent
     }
 
     private func addTag(named raw: String) {

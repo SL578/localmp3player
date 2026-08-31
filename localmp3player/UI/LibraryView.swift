@@ -2,6 +2,11 @@ import CoreData
 import SwiftUI
 
 struct LibraryView: View {
+    /// Bumped when the Library tab is tapped while already showing. The Library
+    /// is the one tab with nothing to pop — it never pushes — so its root is the
+    /// top of an unfiltered list. See `TagsView.popToRoot`.
+    var popToRoot: Int = 0
+
     @Environment(\.managedObjectContext) private var context
     @Environment(\.uiMode) private var uiMode
     @Environment(\.theme) private var theme
@@ -23,8 +28,13 @@ struct LibraryView: View {
                 request: LibraryQuery.allSongs(sort: settings.songSort, searchText: searchText),
                 selection: $selection,
                 isSelecting: isSelecting,
-                sourceName: "Library"
+                sourceName: "Library",
+                scrollToTop: popToRoot
             )
+            // Inside the searchable scope on purpose: `dismissSearch` is only
+            // published to views the modifier encloses, so this has to sit
+            // above `.searchable` in the chain rather than below it.
+            .background { SearchDismisser(signal: popToRoot) }
             .navigationTitle("Library")
             .searchable(
                 text: $searchText,
@@ -38,6 +48,10 @@ struct LibraryView: View {
                 }
             }
             .modeAnimation(uiMode, value: selection.count)
+            // Clearing the text is one third of going back to the root: the
+            // list scrolls itself to the top on the same signal, and
+            // `SearchDismisser` closes the search field so the title comes back.
+            .onChange(of: popToRoot) { searchText = "" }
         }
         .sheet(isPresented: $showingPicker) {
             DocumentPicker { urls in
@@ -175,5 +189,22 @@ struct LibraryView: View {
     private func endSelection() {
         selection.removeAll()
         isSelecting = false
+    }
+}
+
+/// Closes the search field when the Library tab is tapped while already showing.
+///
+/// A zero-sized, non-interactive view rather than a modifier, because
+/// `\.dismissSearch` has to be read from *inside* the searchable hierarchy — the
+/// enclosing screen can't reach it.
+private struct SearchDismisser: View {
+    @Environment(\.dismissSearch) private var dismissSearch
+    let signal: Int
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+            .onChange(of: signal) { dismissSearch() }
     }
 }

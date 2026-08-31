@@ -62,7 +62,7 @@ struct RootView: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
-                pane(.library) { LibraryView() }
+                pane(.library) { LibraryView(popToRoot: popSignal[.library, default: 0]) }
                 pane(.playlists) { PlaylistsView(popToRoot: popSignal[.playlists, default: 0]) }
                 pane(.tags) { TagsView(popToRoot: popSignal[.tags, default: 0]) }
                 pane(.settings) { SettingsView(path: $settingsPath) }

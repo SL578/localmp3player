@@ -203,7 +203,7 @@ struct SmartPlaylistEditor: View {
                     .secondaryText()
             } else {
                 FlowLayout(spacing: 6) {
-                    ForEach(criteria.resolved(tags: tagsByID)) { criterion in
+                    ForEach(criteria.resolved(tags: tagsByID, theme: theme)) { criterion in
                         CriterionChip(criterion: criterion) {
                             remove(criterion, from: slot)
                         }
@@ -393,7 +393,7 @@ struct SmartPlaylistEditor: View {
 private extension SmartCriteria {
     /// Chips in one stable order: tags first with their colours, then artists,
     /// each group alphabetical.
-    func resolved(tags: [UUID: Tag]) -> [Criterion] {
+    func resolved(tags: [UUID: Tag], theme: AppTheme) -> [Criterion] {
         // Untagged leads: it says something about the whole group rather than
         // naming one more member of it.
         let untaggedChip = untagged
@@ -402,7 +402,7 @@ private extension SmartCriteria {
 
         let tagChips = tagIDs.compactMap { id -> Criterion? in
             guard let tag = tags[id] else { return nil }
-            return Criterion(kind: .tag(id), label: tag.displayName, color: Color(hex: tag.colorHex) ?? .gray)
+            return Criterion(kind: .tag(id), label: tag.displayName, color: tag.tint(theme))
         }
         .sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending }
 
@@ -578,7 +578,7 @@ private struct CriteriaPicker: View {
             }
         }
         ForEach(matches) { tag in
-            row(label: tag.displayName, color: Color(hex: tag.colorHex) ?? .gray, isOn: draft.tagIDs.contains(tag.id)) {
+            row(label: tag.displayName, color: tag.tint(theme), isOn: draft.tagIDs.contains(tag.id)) {
                 toggle(tag.id, in: &draft.tagIDs)
             }
         }
