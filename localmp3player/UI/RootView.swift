@@ -118,6 +118,16 @@ struct RootView: View {
             .tint(theme.accent)
             .foregroundStyle(theme.primaryText, theme.secondaryText)
             .modeTransactions(uiMode)
+            // No drag-to-dismiss in Performance mode. Tied to `usesAnimation`
+            // because that is the actual cause: `MotionControl` turns UIKit's
+            // animations off, and an interactive dismissal is the one transition
+            // where that reads as a glitch rather than as speed — the sheet
+            // tracks your finger, then the completion animation it was going to
+            // play is suppressed and it snaps shut. Taking the gesture away
+            // leaves no half-dragged state to snap out of, and the chevron —
+            // which is the designed way out of this screen anyway — closes it
+            // instantly, which is what the mode is for.
+            .interactiveDismissDisabled(!uiMode.usesAnimation)
         }
     }
 
