@@ -108,27 +108,45 @@ struct RootView: View {
         .onChange(of: importCoordinator.phase) { _, phase in
             if phase == .reviewing { tab = .library }
         }
-        .sheet(isPresented: $showingNowPlaying) {
-            NavigationStack {
-                NowPlayingView()
-            }
-            .environmentObject(playback)
-            .environment(\.uiMode, uiMode)
-            .themedSheet(theme)
-            .tint(theme.accent)
-            .foregroundStyle(theme.primaryText, theme.secondaryText)
-            .modeTransactions(uiMode)
-            // No drag-to-dismiss in Performance mode. Tied to `usesAnimation`
-            // because that is the actual cause: `MotionControl` turns UIKit's
-            // animations off, and an interactive dismissal is the one transition
-            // where that reads as a glitch rather than as speed — the sheet
-            // tracks your finger, then the completion animation it was going to
-            // play is suppressed and it snaps shut. Taking the gesture away
-            // leaves no half-dragged state to snap out of, and the chevron —
-            // which is the designed way out of this screen anyway — closes it
-            // instantly, which is what the mode is for.
-            .interactiveDismissDisabled(!uiMode.usesAnimation)
+        // Standard presents the player as a sheet; Performance presents the
+        // same view as a full screen cover.
+        //
+        // Not a look — the drag. `MotionControl` turns UIKit's animations off in
+        // Performance mode, and a sheet dismissal is gesture-driven, so the card
+        // used to follow your finger and then snap shut with no transition.
+        // `interactiveDismissDisabled` was tried and is not enough: it blocks the
+        // *dismissal*, not the drag, so the card still tracked the finger and
+        // rubber-banded back — a gesture that visibly goes nowhere, which
+        // promises something the mode does not do. A cover has no drag to begin
+        // with, so the gesture is honestly absent rather than present and inert.
+        // The leading chevron is the documented way out of this screen either
+        // way, and it closes instantly.
+        .sheet(isPresented: playerBinding(active: uiMode.usesAnimation)) { player }
+        .fullScreenCover(isPresented: playerBinding(active: !uiMode.usesAnimation)) { player }
+    }
+
+    /// The player itself, identical in both presentations so the only difference
+    /// between the modes is how it is put on screen.
+    private var player: some View {
+        NavigationStack {
+            NowPlayingView()
         }
+        .environmentObject(playback)
+        .environment(\.uiMode, uiMode)
+        .themedSheet(theme)
+        .tint(theme.accent)
+        .foregroundStyle(theme.primaryText, theme.secondaryText)
+        .modeTransactions(uiMode)
+    }
+
+    /// Gates one of the two presentations on the current mode, so exactly one is
+    /// ever live. Both modifiers are always applied — choosing between them with
+    /// an `if` instead would restructure the view tree on a mode change.
+    private func playerBinding(active: Bool) -> Binding<Bool> {
+        Binding(
+            get: { showingNowPlaying && active },
+            set: { if !$0 { showingNowPlaying = false } }
+        )
     }
 
     /// Hands over anything that arrived as a URL and asks the coordinator to
