@@ -87,7 +87,7 @@ struct NowPlayingView: View {
         .navigationTitle("Now Playing")
         .navigationBarTitleDisplayMode(.inline)
         .modeNavigationChrome(uiMode, theme: theme)
-        .toolbar {
+        .modeToolbar(uiMode) {
             ToolbarItem(placement: .topBarLeading) {
                 ToolbarGlyph("Close player", systemImage: "chevron.left") { dismiss() }
             }

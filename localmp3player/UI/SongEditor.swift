@@ -9,6 +9,7 @@ import SwiftUI
 struct SongEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
+    @Environment(\.uiMode) private var uiMode
     @Environment(\.managedObjectContext) private var context
     @FetchRequest(fetchRequest: LibraryQuery.allTags()) private var existingTags: FetchedResults<Tag>
 
@@ -88,7 +89,7 @@ struct SongEditor: View {
             .themedScrollBackground(theme)
             .navigationTitle("Edit Song")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
+            .modeToolbar(uiMode) {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }

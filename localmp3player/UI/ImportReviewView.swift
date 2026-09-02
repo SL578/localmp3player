@@ -28,7 +28,7 @@ struct ImportReviewView: View {
             .themedScrollBackground(theme)
             .navigationTitle("Review Import")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
+            .modeToolbar(uiMode) {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { coordinator.cancelReview() }
                 }
@@ -95,6 +95,7 @@ private struct DraftSummaryRow: View {
 struct ImportDraftEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
+    @Environment(\.uiMode) private var uiMode
     @FetchRequest(fetchRequest: LibraryQuery.allTags()) private var existingTags: FetchedResults<Tag>
 
     @Binding var draft: ImportDraft
@@ -177,7 +178,7 @@ struct ImportDraftEditor: View {
         .navigationTitle("Edit")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
-        .toolbar {
+        .modeToolbar(uiMode) {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { dismiss() }
             }

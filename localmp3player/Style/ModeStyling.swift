@@ -120,7 +120,58 @@ extension View {
             }
         }
     }
+}
 
+extension ToolbarContent {
+    /// Strips the Liquid Glass capsule iOS 26 draws behind a navigation-bar item.
+    ///
+    /// That capsule is a material like any other, and Performance mode already
+    /// refuses materials everywhere else — but this one had to be found by
+    /// measurement rather than by reading, because it is drawn by the *system*
+    /// rather than asked for by the app. **It samples the scroll content behind
+    /// the bar, not the bar's own fill**, so `modeNavigationChrome`'s pinned
+    /// opaque background does not stop it: the fill under the Now Playing
+    /// chevron measured rgb 25 at the top of the scroll, 46 with the artwork
+    /// passing behind the bar, and 25 again once the artwork had gone by. In
+    /// Standard mode that is a cross-fade and reads as the glass doing its job;
+    /// with `UIView.setAnimationsEnabled(false)` it is a hard step, which is
+    /// what the user saw as the chevron changing colour while they scrolled.
+    ///
+    /// Reached through `modeToolbar` rather than called directly, so a screen
+    /// cannot declare a toolbar and forget this.
+    ///
+    /// Stated as a value rather than an `if` on the mode, for the reason in
+    /// `modeTransactions`: a branch in a `@ToolbarContentBuilder` is a change of
+    /// structural identity, and this sits on items that would otherwise be
+    /// rebuilt on every mode change for no gain. The `#available` branch is
+    /// fine — it is fixed for the life of the process.
+    @ToolbarContentBuilder
+    fileprivate func modeToolbarBackground(_ mode: UIMode) -> some ToolbarContent {
+        if #available(iOS 26.0, *) {
+            sharedBackgroundVisibility(mode.usesMaterials ? .automatic : .hidden)
+        } else {
+            self
+        }
+    }
+}
+
+extension View {
+    /// `toolbar`, with the mode's own answer about the bar items' background
+    /// already applied. Every toolbar in the app goes through this.
+    ///
+    /// A wrapper rather than a modifier the caller adds afterwards, because the
+    /// thing it turns off is drawn by the system whether or not the app asks for
+    /// it: a `.toolbar` written the plain way silently opts back into the
+    /// sampling glass. See `modeToolbarBackground` for what that looks like.
+    func modeToolbar<Content: ToolbarContent>(
+        _ mode: UIMode,
+        @ToolbarContentBuilder content: () -> Content
+    ) -> some View {
+        toolbar { content().modeToolbarBackground(mode) }
+    }
+}
+
+extension View {
     /// Marks a button that lives *inside* a list or form as an action rather than
     /// a label — New Playlist, Add Tags or Artists, and friends.
     ///

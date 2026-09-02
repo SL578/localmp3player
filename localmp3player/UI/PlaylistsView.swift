@@ -125,7 +125,7 @@ struct PlaylistsView: View {
                 manualTarget = nil
             }
             .environment(\.editMode, $editMode)
-            .toolbar { toolbarContent }
+            .modeToolbar(uiMode) { toolbarContent }
             .safeAreaInset(edge: .bottom) {
                 if isSelecting && !selection.isEmpty {
                     selectionBar
@@ -308,6 +308,7 @@ struct PlaylistEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
     @Environment(\.managedObjectContext) private var context
+    @Environment(\.uiMode) private var uiMode
     let target: Target
 
     @State private var name = ""
@@ -323,7 +324,7 @@ struct PlaylistEditor: View {
             .themedScrollBackground(theme)
             .navigationTitle(isNew ? "New Playlist" : "Rename Playlist")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
+            .modeToolbar(uiMode) {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
@@ -478,7 +479,7 @@ struct PlaylistDetailView: View {
         // Done takes the back button's place while editing, the same as in
         // `TagDetailView` — one way out, and a bar with room for the title.
         .navigationBarBackButtonHidden(editMode.isEditing)
-        .toolbar {
+        .modeToolbar(uiMode) {
             // Hand-rolled rather than `EditButton`, which drives the environment
             // value it finds rather than this one — leaving the toolbar unable to
             // tell whether the list was being edited.
@@ -665,7 +666,7 @@ struct SmartPlaylistDetailView: View {
         .navigationTitle(playlist.name)
         // Large, matching a playlist's — see `TagDetailView`.
         .modeNavigationChrome(uiMode, theme: theme, title: .large)
-        .toolbar {
+        .modeToolbar(uiMode) {
             // Shuffle only. Play All queued the same songs in the order already
             // on screen, which tapping the first row does.
             ToolbarItem(placement: .topBarTrailing) {
@@ -701,6 +702,7 @@ struct SongPickerView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
     @Environment(\.managedObjectContext) private var context
+    @Environment(\.uiMode) private var uiMode
     @FetchRequest(fetchRequest: LibraryQuery.allSongs()) private var allSongs: FetchedResults<Song>
     @State private var selection = Set<UUID>()
     @State private var searchText = ""
@@ -748,7 +750,7 @@ struct SongPickerView: View {
                     )
                 }
             }
-            .toolbar {
+            .modeToolbar(uiMode) {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }

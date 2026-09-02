@@ -46,7 +46,7 @@ struct LibraryView: View {
             // mode whose whole promise is that nothing is composited through a
             // blur. `.large` because the title is: see `ModeTitleStyle`.
             .modeNavigationChrome(uiMode, theme: theme, title: .large)
-            .toolbar { toolbarContent }
+            .modeToolbar(uiMode) { toolbarContent }
             .safeAreaInset(edge: .bottom) {
                 if isSelecting && !selection.isEmpty {
                     selectionBar

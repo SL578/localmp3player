@@ -72,7 +72,7 @@ struct TagsView: View {
                     ContentUnavailableView("No Tags", systemImage: "tag", description: Text("Tags let you build smart playlists and browse quickly in CarPlay."))
                 }
             }
-            .toolbar { toolbarContent }
+            .modeToolbar(uiMode) { toolbarContent }
             .safeAreaInset(edge: .bottom) {
                 if isSelecting && !selection.isEmpty {
                     selectionBar
@@ -193,6 +193,7 @@ struct TagEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
     @Environment(\.managedObjectContext) private var context
+    @Environment(\.uiMode) private var uiMode
     @FetchRequest(fetchRequest: LibraryQuery.allTags()) private var tags: FetchedResults<Tag>
 
     let target: Target
@@ -216,7 +217,7 @@ struct TagEditor: View {
             .themedScrollBackground(theme)
             .navigationTitle(isNew ? "New Tag" : "Rename Tag")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
+            .modeToolbar(uiMode) {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
@@ -308,7 +309,7 @@ struct TagDetailView: View {
         // one way out of edit mode is the one that also settles the list. Leaving
         // both up meant five controls and a title truncated to "Ta...".
         .navigationBarBackButtonHidden(isEditing)
-        .toolbar {
+        .modeToolbar(uiMode) {
             if isEditing {
                 ToolbarItem(placement: .topBarLeading) {
                     ToolbarGlyph("Done", systemImage: AppSymbol.done) {
@@ -451,6 +452,7 @@ struct EntityColorPicker<Object: Colorable>: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.managedObjectContext) private var context
     @Environment(\.theme) private var theme
+    @Environment(\.uiMode) private var uiMode
     @ObservedObject var object: Object
 
     var body: some View {
@@ -486,7 +488,7 @@ struct EntityColorPicker<Object: Colorable>: View {
             .themedScrollBackground(theme)
             .navigationTitle(Object.colorTitle)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
+            .modeToolbar(uiMode) {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
                         try? context.save()
@@ -574,6 +576,7 @@ struct BatchTagEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
     @Environment(\.managedObjectContext) private var context
+    @Environment(\.uiMode) private var uiMode
     @FetchRequest(fetchRequest: LibraryQuery.allTags()) private var tags: FetchedResults<Tag>
 
     let songIDs: Set<UUID>
@@ -626,7 +629,7 @@ struct BatchTagEditor: View {
             .themedScrollBackground(theme)
             .navigationTitle("\(songIDs.count) Songs")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
+            .modeToolbar(uiMode) {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
                         PersistenceController.shared.save()

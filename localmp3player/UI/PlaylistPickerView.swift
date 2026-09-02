@@ -6,6 +6,7 @@ struct PlaylistPickerView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.managedObjectContext) private var context
     @Environment(\.theme) private var theme
+    @Environment(\.uiMode) private var uiMode
     @FetchRequest(fetchRequest: LibraryQuery.allPlaylists()) private var playlists: FetchedResults<Playlist>
 
     let songs: [Song]
@@ -51,7 +52,7 @@ struct PlaylistPickerView: View {
             .themedScrollBackground(theme)
             .navigationTitle("Add \(songs.count) Song\(songs.count == 1 ? "" : "s")")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
+            .modeToolbar(uiMode) {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
@@ -68,7 +69,7 @@ struct PlaylistPickerView: View {
                     .themedSheet(theme)
                     .navigationTitle("New Playlist")
                     .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
+                    .modeToolbar(uiMode) {
                         ToolbarItem(placement: .cancellationAction) {
                             Button("Cancel") {
                                 newPlaylistName = ""

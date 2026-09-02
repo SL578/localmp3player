@@ -90,6 +90,7 @@ struct SmartPlaylistEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.managedObjectContext) private var context
     @Environment(\.theme) private var theme
+    @Environment(\.uiMode) private var uiMode
     let target: Target
 
     @FetchRequest(fetchRequest: LibraryQuery.allTags()) private var tags: FetchedResults<Tag>
@@ -151,7 +152,7 @@ struct SmartPlaylistEditor: View {
             .themedScrollBackground(theme)
             .navigationTitle(isNew ? "New Smart Playlist" : "Smart Playlist")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
+            .modeToolbar(uiMode) {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
@@ -510,6 +511,7 @@ private struct CriteriaPicker: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
+    @Environment(\.uiMode) private var uiMode
 
     let title: String
     let tags: [Tag]
@@ -548,7 +550,7 @@ private struct CriteriaPicker: View {
             .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search")
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
+            .modeToolbar(uiMode) {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
