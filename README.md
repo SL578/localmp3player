@@ -10,7 +10,8 @@ sits inside the `codingRelated` checkout, which ignores this path outright
 rather than recording a gitlink — so running git from the parent reports a
 clean tree no matter what is uncommitted here. Run git from this directory.
 
-`docs/` holds the written specs and handoff notes the app was built from.
+`docs/` holds the written specs the app was built from, and `docs/HANDOFF.md`,
+the single running handoff for picking up work between sessions.
 
 ## Building
 
@@ -119,8 +120,9 @@ next always moves on, which is the platform convention. `shufflePlay` is the
 playlist, every smart playlist, and every tag. Shuffle and repeat are also wired
 to the system remote commands, so the lock screen and CarPlay can drive them.
 
-Tapping a song starts playback and pushes the player for that list, so the queue
-on screen is exactly what you played from and nothing else.
+Tapping a song starts playback of that list and stays put, so the queue is
+exactly what you played from and nothing else. The mini player bar is the only
+way into the full player.
 
 ## Not implemented (out of scope by design)
 
