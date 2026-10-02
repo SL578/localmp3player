@@ -102,9 +102,19 @@ need one.
   all historical shapes and upgrades on save. Live match count in the editor.
 - **Playback** — queue, background audio, lock-screen remote commands, play
   count / last-played. Queue kept twice (`orderedQueue` browse order + `queue`
-  play order) so shuffle off restores order without reloading the track. Repeat
-  cycles off → all → one; **repeat-one applies only on natural track end** —
-  next always advances. `ScrubBar` owns its drag gesture; tap-to-seek works.
+  play order) so shuffle off restores order without reloading the track. Both
+  hold `QueueEntry` values (own `UUID` + song), not songs, so one song can be
+  queued twice. Repeat cycles off → all → one; **repeat-one applies only on
+  natural track end** — next always advances. `ScrubBar` owns its drag gesture;
+  tap-to-seek works.
+- **Queue actions** — Play Next / Play Last on the leading swipe (after Like)
+  in `SongListContent` and playlist detail rows, and as one menu glyph in the
+  Library, tag and playlist selection bars (`UI/QueueActions.swift`). A
+  "Playing next" / "Added to queue" capsule shows for 1.6s (`QueueNotice`). Up
+  Next in the player is editable: long-press drag to reorder, swipe to Remove.
+- **Total length** — "N songs · X min" on playlist, smart, tag and CarPlay rows
+  and as the first row of each detail screen; "X min left" in the Up Next
+  header. `TimeFormatting.totalLength` / `songSummary`, summed in memory.
 - **Colours** — tags, playlists and smart playlists carry a colour; nil draws in
   the theme accent via `Colorable.tint(_:)`.
 - **Appearance** — System / Light / Dark / Dynamic (fixed 19:00–07:00, see
@@ -419,66 +429,53 @@ says so in the section footer instead of silently returning nothing.
 **`SmartPlaylistDetailView` renders an array, not a `@FetchRequest`.** A rule can
 end in a random sample, which no single request expresses.
 
----
+**A smart row's length comes from `SmartPlaylistEngine.summary`**, a
+durations-only dictionary fetch, refreshed on every context save. A random
+sample that the limit trims has no fixed length, so it shows `~` and the
+sample size × the average match. CarPlay's smart rows show count · length
+instead of the rule summary — "how much" matters more than "how it's built"
+when picking something in the car.
 
-## Planned next: queue actions + total length (not started)
+### Queue and Up Next
 
-Planned on 2026-09-29. **No code has been written for any of this.** The user's
-answers below are settled. Don't ask them again.
+Settled with the user on 2026-09-29 — don't re-ask:
 
-### Decisions
+- **Tapping a song still replaces the whole queue**, queued songs included.
+  There is no separate user queue.
+- **Queueing a song that's already queued adds a copy**; it doesn't move it.
+- **Up Next is edited in the player, which is a `List` (option B).** Option A,
+  a separate queue-editor sheet, was the fallback and wasn't needed.
 
-- **Tapping a song still replaces the whole queue**, including anything the
-  user queued. There is no separate user-queue.
-- **Queueing a song that's already queued adds a copy.** It doesn't move the
-  existing one.
-- **Actions wanted:** Play Next, Play Last, both from the multi-select bar, and
-  reorder/remove in Up Next.
-- **Total length goes everywhere:** playlist/smart/tag list rows, detail
-  screens, the Up Next header ("N songs · X min left") and CarPlay rows.
-- **Up Next editing uses option B: rebuild `NowPlayingView` as a `List`** so
-  songs can be reordered and removed in place. Option A was a separate
-  queue-editor sheet. The user chose B knowing the risk below.
+How it works, and why:
 
-### The risk with B
-
-`NowPlayingView` is a `ScrollView { VStack }`. It was reworked for Performance
-mode: the cover presentation in `cb46a92` and the toolbar glass not sampling
-content in `cc0e29e`. Making it a `List` changes its scroll container and
-background. **Re-check both Performance-mode fixes after the change**, along with
-the chevron colour while scrolling and `theme.background` behind the list
-(`themedScrollBackground`). The artwork, labels, scrub bar and transport become
-list rows with hidden separators. Only the Up Next section gets `.onMove` /
-`.onDelete`. `ScrubBar`'s `highPriorityGesture` was chosen for a `ScrollView`;
-re-check scrubbing inside a `List` row too. If B can't be made to look right,
-fall back to A rather than patching over it, and tell the user.
-
-### Planned build order
-
-1. **Total length.** Add `TimeFormatting.totalLength(_:)` in
-   `Style/ModeStyling.swift` that reads "47 min" / "2 hr 5 min". Don't reuse
-   `duration`, because `1:02:05` is a song-clock format. Sum `Song.duration` in
-   memory, with no stored field. Add it to the rows at `PlaylistsView.swift`
-   (`"\(playlist.entries.count) songs"`), `TagsView.swift` and
-   `CarPlayBrowser.swift`, and to a summary line on each detail screen.
-2. **Queue model.** Change `queue` / `orderedQueue` from `[Song]` into entries
-   with their own `UUID`, so duplicates are safe. Today Up Next uses
-   `id: \.element.id` and `forget()` removes by song ID, and both break with
-   duplicates. Add `playNext(_:)`, which inserts after `queueIndex` in `queue`
-   and after the current song in `orderedQueue`, so shuffle on/off keeps the
-   songs. Add `playLast(_:)`, which appends to both; with shuffle on, the songs
-   are *not* shuffled in. Add `moveInQueue` and `removeFromQueue`, both keeping
-   `queueIndex` on the playing entry. If nothing is playing, both start
-   playback.
-3. **Actions.** Add Play Next and Play Last to the leading swipe beside Like,
-   in `SongList.swift` and the playlist detail rows in `PlaylistsView.swift`,
-   and to `SelectionBar.swift`. Show a brief "Playing next" / "Added to queue"
-   confirmation, with no animation in Performance mode.
-4. **Up Next as a `List`** (option B above). The "X min left" text must observe
-   `PlaybackClock` in its own small view, as the scrub bar does, or the whole
-   screen redraws every second again.
-
-Verify each step on the simulator using the stale-bundle check above.
+- **With shuffle off, `orderedQueue == queue` at all times**, and every edit
+  relies on it (`moveInQueue` copies `queue` over). Play Next inserts after the
+  playing entry in *both* orders, so turning shuffle off keeps the songs next.
+  Play Last appends to both and is never shuffled in. A move made with shuffle
+  on changes play order only — turning shuffle off goes back to browse order.
+- **With nothing loaded, Play Next / Last just start playback**, and no toast is
+  posted — the mini bar appearing is the confirmation.
+- **The playing row can't be removed from Up Next** (no swipe on it). Removing
+  it would be "stop" by another name.
+- **Reorder is long-press-and-drag with no edit mode.** An `EditMode` toggle
+  would show handles but turn row taps into selection and swipes into red
+  circles. Remove is a detach, so it keeps `role: .destructive` and comes out
+  blue like every other detach.
+- **The Up Next header is a row, not a section header.** A plain list pins
+  headers and draws a background behind them.
+- **`UpNextHeader` observes `PlaybackClock` itself** — same reason as
+  `ProgressSection`. Don't read the clock in `NowPlayingView.body`.
+- **`QueueNotice` is its own object**, not state on `PlaybackController`, so a
+  toast only invalidates the toast.
+- **The queue swipe buttons sit inside each row's existing
+  `.swipeActions(edge: .leading)`**, after Like (so a full swipe still likes). A
+  second `.swipeActions` on the same edge risks one replacing the other.
+- **`moveInQueue` hand-rolls the move** rather than importing SwiftUI into the
+  playback layer for `move(fromOffsets:toOffset:)`.
+- Re-checked after the `List` rebuild (2026-10-01): Performance bar stays pure
+  black with artwork scrolled under it, chevron pixels identical (0,153,255) at
+  rest and mid-scroll, scrubbing a slightly diagonal drag doesn't scroll the
+  list, shuffle on → off restores order with queued songs kept.
 
 ---
 
@@ -518,12 +515,20 @@ Verify each step on the simulator using the stale-bundle check above.
   are untested.
 - **Performance mode's player is genuinely full screen** (no card, no inset)
   since `cb46a92`. Flagged with the veto offered; not ruled on.
+- **Unverified on the simulator:** the `~` random-sample length (the toggle
+  taps raced the screenshot lag), and the playlist-reorder fix for a playlist
+  holding a song twice (`Jjj` has no duplicates). Both are small; worth one
+  manual look.
+- **The queue isn't persisted.** A relaunch (including every `simctl install`)
+  empties it. Pre-existing; not asked for.
+- **The selection bar's queue menu is a system menu**, so it draws glass in
+  Performance mode — same as the Library's sort menu. No View-level way off.
 - **Announce Notifications** was reported as "text to speech turned on" while
   listening. Not the app — no app can enable it. Not re-confirmed by the user.
 
 ## State of the simulator's test data
 
-As of 2026-09-01:
+As of 2026-09-01, re-checked 2026-10-01 (unchanged):
 
 - **Library: 25 songs.**
 - **One tag, `Classical`, holds 9 songs** — Swan Lake Suite, The Nutcracker
@@ -548,7 +553,8 @@ As of 2026-09-01:
   ```
 
   Files placed there are consumed and deleted by design — copy, never move.
-- Last known state: Performance mode, dark, default blue accent.
+- Last known state (2026-10-01): Standard mode, dark, default blue accent. No
+  smart playlist (one was made and deleted to test the row).
 
 **The simulator is the larger library** — 25 songs against nine on the iPhone 16
 at last count. Ask which device a report came from.
@@ -582,6 +588,11 @@ at last count. Ask which device a report came from.
   taps to get back out. Aim at song rows, not the top of the list.
 - **The user tests alongside you in the same simulator.** Don't assume the app
   state is yours.
+- **The simulator tool's screenshots lag taps by ~1s.** Two taps on a toggle
+  with a screenshot between them can land as on-then-off. Tap once, wait, then
+  screenshot; `xcrun simctl io ... screenshot` is current.
+- **A redeploy stops playback** (the app relaunches), so any queue test starts
+  from an empty queue.
 
 ## User preferences observed
 
@@ -632,10 +643,22 @@ forgiveness after the fact, not licence. Flag changes to it in the same message.
 
 Newest first.
 
+### 2026-10-01 — queue actions and total length (`cabbf17`, `f80954c`)
+
+Built the whole plan from 2026-09-29. `cabbf17`: total length on rows, detail
+screens and CarPlay. `f80954c`: queue entries, Play Next / Play Last (swipe +
+selection bar + toast), Now Playing rebuilt as a `List` with an editable Up
+Next. Option B held up; no fallback to A. Adjacent fix folded into `f80954c`:
+`Playlist.reorder` keyed entries by song, so a song held twice collapsed onto
+one entry — now reorders by entry. Toast first used `modeCard`'s thin material
+and text read through it; `modeCapsule` (regular material) added. Simulator
+left in Standard mode as found; a temporary smart playlist was created to check
+the row and then deleted. Not pushed.
+
 ### 2026-09-29 — planning only, and this file
 
 No code. Planned queue actions (Play Next / Play Last / edit Up Next) and total
-playlist length — see **Planned next**. Folded the eight dated handoffs into this
+playlist length — built 2026-10-01; see **Queue and Up Next**. Folded the eight dated handoffs into this
 single file and added `CLAUDE.md` pointing here.
 
 ### 2026-09-01 — toolbar glass in Performance mode (`cc0e29e`)
