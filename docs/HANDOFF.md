@@ -95,6 +95,14 @@ need one.
   Editing a song recomputes the key.
 - **Tagging** — per-song and multi-select batch tagging (tri-state for partial
   selections), colour-coded chips.
+- **Tag suggestions** — `Library/TagSuggester` suggests the user's *existing*
+  tags for a song from two signals: how they've tagged other songs by the same
+  artist, and the on-device Apple Intelligence model (Foundation Models, iOS 26+,
+  weak-linked). Shown as dashed chips you tap to accept, in the import review
+  sheet (rows and editor, plus "Add All Suggested Tags") and, for existing songs,
+  under Select ▸ Tag ▸ Suggest Tags for Each Song (`UI/TagSuggestionViews`).
+  Settings ▸ Tag Suggestions has "Tick Suggestions Automatically" (off by
+  default) and shows the model's status.
 - **Playlists** — manual (drag-reorder, order in `PlaylistEntry.position`) and
   smart. `SmartRule` carries tag and artist criteria together: include (any/all),
   exclude, and an except-override that rescues from an exclusion only. Untagged
@@ -143,7 +151,8 @@ xcodebuild -project localmp3player.xcodeproj -scheme localmp3player -destination
 xcrun simctl install <UDID> <path>/localmp3player.app && xcrun simctl launch <UDID> com.lin.localmp3player
 ```
 
-Builds clean, zero warnings. iOS 17.0 target, Xcode 26.6, iOS 26.5 SDK. **There
+Builds clean, zero warnings. iOS 17.0 target, Xcode 27.0, iOS 27.0 SDK (the user
+updated Xcode on 2026-10-01). **There
 are two targets**, and the app target embeds the extension, so building the app
 builds both.
 
@@ -477,6 +486,44 @@ How it works, and why:
   rest and mid-scroll, scrubbing a slightly diagonal drag doesn't scroll the
   list, shuffle on → off restores order with queued songs kept.
 
+### Tag suggestions
+
+Settled with the user on 2026-10-01 — don't re-ask:
+
+- **Suggest, never apply.** Suggestions are shown unticked; nothing is tagged
+  unless the user picks it. The Settings toggle only pre-ticks them — they still
+  pass through a review screen before anything is written. The reason: a wrong
+  tag silently changes smart playlists, CarPlay ones included.
+- **Only existing tags are ever suggested.** The model answers through a
+  `DynamicGenerationSchema` whose items are `anyOf` the tag display names, so it
+  can't emit anything else — no validation or fuzzy matching afterwards.
+- **The user's tags are genre and language** (jpop, japanese, classical,
+  english, rap, EDM, videogame, vocaloid…), which is why title/artist/album is
+  enough input. Mood/activity tags would not suit this approach.
+
+How it works, and why:
+
+- **Artist history first, model second, merged.** A tag qualifies from history
+  when at least half of the user's tagged songs by any credited artist carry it.
+  `artistKeys` splits "feat." / "&" / "x" / "," credits, so a Teto feature by a
+  new producer still picks up how the user tags Teto.
+- **The prompt carries up to two of the user's own tagged songs per tag** (max
+  24) as examples. Suggestions get noticeably better once a library has some
+  tagging — the zero-history import missed `vocaloid` on two Teto/Miku songs.
+- **One `LanguageModelSession` per song.** A long-lived one would carry every
+  song in its transcript and overflow the context window mid-batch.
+- **Greedy sampling**, so the same song gets the same answer.
+- **Any model error just means no model suggestions** for that song — guardrail
+  refusals, unsupported locale, a busy model.
+- **Import suggestions live in `ImportCoordinator.suggestions`, not on the
+  draft.** Accepting copies the name into `draft.tagNames`. One background task
+  asks for each draft in turn; a second share joining the sheet restarts it and
+  skips drafts already answered. Commit cancels it.
+- **Import rows push the editor by tap, not `NavigationLink`.** A link claims the
+  whole row; the chips need their own taps (`.buttonStyle(.borderless)` per chip,
+  never on the list). Swipe-to-delete re-checked after the change.
+- **No new model version.** Nothing is stored — suggestions are recomputed.
+
 ---
 
 ## Known issues / open items
@@ -523,12 +570,26 @@ How it works, and why:
   empties it. Pre-existing; not asked for.
 - **The selection bar's queue menu is a system menu**, so it draws glass in
   Performance mode — same as the Library's sort menu. No View-level way off.
+- **The iOS 26.5 simulator can't run the model.** It reports Apple Intelligence
+  available, but every request fails inside the safety filter
+  (`SensitiveContentAnalysisML` → `ModelManagerError 1001`, asset not found),
+  with default and permissive guardrails alike. The Mac itself answers fine
+  (checked with a script), and so does an **iOS 27.0 simulator** — that's where
+  the model path was verified. On the 26.5 sim only the artist-history half
+  works, silently.
+- **Tag suggestions are untested on the iPhone 16.** Expect it to behave like the
+  iOS 27 simulator; worth one import and one Suggest Tags run on the device.
+- **Suggestions aren't recomputed after editing a draft's title/artist** in the
+  import editor. Small; not asked for.
+- **With auto-tick on, a suggestion arriving while that draft's editor is open is
+  dropped on Done** (the editor writes back its own copy). Edge case; left.
 - **Announce Notifications** was reported as "text to speech turned on" while
   listening. Not the app — no app can enable it. Not re-confirmed by the user.
 
 ## State of the simulator's test data
 
-As of 2026-09-01, re-checked 2026-10-01 (unchanged):
+As of 2026-09-01, re-checked 2026-10-01 (unchanged — five tags were added for
+the suggestion test and deleted again, with no songs ever put in them):
 
 - **Library: 25 songs.**
 - **One tag, `Classical`, holds 9 songs** — Swan Lake Suite, The Nutcracker
@@ -561,7 +622,13 @@ at last count. Ask which device a report came from.
 
 ## Working notes for the simulator
 
-- Simulator: **iPhone 17, `D4DACBFD-572D-42AB-96AF-6FD72E2A3562`**.
+- Simulator: **iPhone 17, `D4DACBFD-572D-42AB-96AF-6FD72E2A3562`** (iOS 26.5).
+  **Apple Intelligence testing: "iPhone 17 (iOS 27 AI test)",
+  `DD15D551-47A9-45ED-A4DD-9D86CAA42588`** — created 2026-10-01 because the 26.5
+  sim can't run the model. Throwaway library: the 25 test songs, six tags
+  (Classical, EDM, english, japanese, rap, vocaloid) applied from suggestions,
+  and "Tick Suggestions Automatically" left **on**. On it, a plain tap doesn't
+  flip a `Toggle` — drag across the switch instead.
   Device: **iPhone 16, `EFEEEBD5-61F7-5EEF-AEAD-A1F827571239`**.
 - **Native screenshots are 1206 × 2622; point space is 402 × 874** — a clean
   **×3**. The simulator tool returns a resized image with a different ratio;
@@ -642,6 +709,21 @@ forgiveness after the fact, not licence. Flag changes to it in the same message.
 ## Session log
 
 Newest first.
+
+### 2026-10-01 (second) — tag suggestions with Apple Intelligence (`8dc4ef7`)
+
+The user asked whether Apple Intelligence could assign existing tags to songs.
+Agreed: suggestions only (unticked chips), plus a Settings toggle to pre-tick
+them. Built `TagSuggester` (artist history + Foundation Models with a
+schema-constrained answer), suggestion chips in the import review sheet and
+editor, "Suggest Tags for Each Song" from the batch Tag sheet, and a Tag
+Suggestions section in Settings. See **Decisions ▸ Tag suggestions**.
+
+Verified on a new iOS 27 simulator: 25-song import got sensible tags at ~1.5s a
+song; chips toggle without opening the row; Add All; editor chips; commit; the
+existing-songs screen (artist history added `vocaloid` to はぐ from MIMI's other
+songs); auto-tick on both paths; swipe-to-delete on the review sheet. Tried
+first on the 26.5 simulator — the model fails there (see Known issues).
 
 ### 2026-10-01 — queue actions and total length (`cabbf17`, `f80954c`)
 
