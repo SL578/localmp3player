@@ -52,13 +52,13 @@ extension Playlist {
     }
 
     /// Rewrites `position` on every entry so it matches the given order.
-    func reorder(to songs: [Song]) {
-        var byID: [UUID: PlaylistEntry] = [:]
-        for entry in entries {
-            if let songID = entry.song?.id { byID[songID] = entry }
-        }
-        for (index, song) in songs.enumerated() {
-            byID[song.id]?.position = Int64(index)
+    ///
+    /// Takes entries, not songs: a playlist can hold a song twice, and keyed by
+    /// song the two copies collapsed onto one slot, so dragging either of them
+    /// left two entries sharing a position.
+    func reorder(entries ordered: [PlaylistEntry]) {
+        for (index, entry) in ordered.enumerated() {
+            entry.position = Int64(index)
         }
     }
 

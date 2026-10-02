@@ -33,6 +33,17 @@ enum RepeatMode: String, CaseIterable {
     }
 }
 
+/// One slot in the queue. The queue holds entries rather than songs because the
+/// same song can be queued twice — Play Next on something already coming up adds
+/// a copy — and reordering, removing and the shuffle round-trip all need to tell
+/// those two copies apart.
+struct QueueEntry: Identifiable, Equatable {
+    let id = UUID()
+    let song: Song
+
+    static func == (lhs: QueueEntry, rhs: QueueEntry) -> Bool { lhs.id == rhs.id }
+}
+
 /// Owns the audio session, the queue, and the now-playing surface shared by the
 /// phone UI, the lock screen, and CarPlay.
 @MainActor
@@ -42,7 +53,7 @@ final class PlaybackController: NSObject, ObservableObject {
     @Published private(set) var currentSong: Song?
     @Published private(set) var isPlaying = false
     /// The queue in the order it will actually play (already shuffled if shuffle is on).
-    @Published private(set) var queue: [Song] = []
+    @Published private(set) var queue: [QueueEntry] = []
     @Published private(set) var queueIndex: Int = 0
     /// The playing position, on its own object so the 1 Hz ticker doesn't
     /// republish the controller once a second. Held as a plain `let`: see
@@ -54,7 +65,8 @@ final class PlaybackController: NSObject, ObservableObject {
     @Published private(set) var repeatMode: RepeatMode = .off
 
     /// The queue in its original browse order, kept so shuffle can be undone.
-    private var orderedQueue: [Song] = []
+    /// Equal to `queue` whenever shuffle is off; every edit below relies on that.
+    private var orderedQueue: [QueueEntry] = []
 
     private var player: AVAudioPlayer?
     private var ticker: Timer?
@@ -68,25 +80,30 @@ final class PlaybackController: NSObject, ObservableObject {
 
     var duration: Double { player?.duration ?? currentSong?.duration ?? 0 }
 
+    /// The entry that is playing — not just the song, which may be queued twice.
+    var currentEntryID: QueueEntry.ID? {
+        queue.indices.contains(queueIndex) ? queue[queueIndex].id : nil
+    }
+
     // MARK: - Queue control
 
     func play(songs: [Song], startingAt index: Int, sourceName: String? = nil) {
         guard !songs.isEmpty, songs.indices.contains(index) else { return }
-        orderedQueue = songs
+        let entries = songs.map { QueueEntry(song: $0) }
+        orderedQueue = entries
         queueSourceName = sourceName
 
         if isShuffled {
             // Keep the tapped song first so the tap still does what it looks like.
-            let picked = songs[index]
-            var rest = songs
-            rest.remove(at: index)
+            var rest = entries
+            let picked = rest.remove(at: index)
             queue = [picked] + rest.shuffled()
             queueIndex = 0
         } else {
-            queue = songs
+            queue = entries
             queueIndex = index
         }
-        load(queue[queueIndex], autoPlay: true)
+        load(queue[queueIndex].song, autoPlay: true)
     }
 
     func play(song: Song, sourceName: String? = nil) {
@@ -104,7 +121,66 @@ final class PlaybackController: NSObject, ObservableObject {
     func jump(to index: Int) {
         guard queue.indices.contains(index) else { return }
         queueIndex = index
-        load(queue[index], autoPlay: true)
+        load(queue[index].song, autoPlay: true)
+    }
+
+    // MARK: - Editing the queue
+
+    /// Queues songs straight after the one playing. In browse order too, so they
+    /// stay next-ish when shuffle is turned off. With nothing loaded there is
+    /// nothing to come after, so they just start playing.
+    func playNext(_ songs: [Song]) {
+        guard !songs.isEmpty else { return }
+        guard let playingID = currentEntryID else {
+            play(songs: songs, startingAt: 0)
+            return
+        }
+        let entries = songs.map { QueueEntry(song: $0) }
+        queue.insert(contentsOf: entries, at: queueIndex + 1)
+        let browsePosition = orderedQueue.firstIndex { $0.id == playingID } ?? orderedQueue.count - 1
+        orderedQueue.insert(contentsOf: entries, at: browsePosition + 1)
+    }
+
+    /// Queues songs at the very end. With shuffle on they are not shuffled in —
+    /// "last" means last.
+    func playLast(_ songs: [Song]) {
+        guard !songs.isEmpty else { return }
+        guard currentEntryID != nil else {
+            play(songs: songs, startingAt: 0)
+            return
+        }
+        let entries = songs.map { QueueEntry(song: $0) }
+        queue.append(contentsOf: entries)
+        orderedQueue.append(contentsOf: entries)
+    }
+
+    /// Reorders the play order. With shuffle off that is also the browse order;
+    /// with it on, the browse order is left alone, so turning shuffle off still
+    /// goes back to the list the queue came from.
+    func moveInQueue(fromOffsets offsets: IndexSet, toOffset destination: Int) {
+        let playingID = currentEntryID
+        // `move(fromOffsets:toOffset:)` is SwiftUI's; spelled out here so the
+        // playback layer doesn't import a UI framework for one call.
+        // `destination` counts positions in the list *before* the move.
+        let moving = offsets.filter { queue.indices.contains($0) }.map { queue[$0] }
+        let insertAt = destination - offsets.filter { $0 < destination }.count
+        var remaining = queue.enumerated().filter { !offsets.contains($0.offset) }.map(\.element)
+        remaining.insert(contentsOf: moving, at: min(max(insertAt, 0), remaining.count))
+        queue = remaining
+        if !isShuffled { orderedQueue = queue }
+        queueIndex = queue.firstIndex { $0.id == playingID } ?? 0
+    }
+
+    /// Takes entries out of both orders. The playing entry is never removed this
+    /// way — Up Next doesn't offer it — since that would be "stop" by another name.
+    func removeFromQueue(atOffsets offsets: IndexSet) {
+        let playingID = currentEntryID
+        let removed = Set(offsets.filter { queue.indices.contains($0) }.map { queue[$0].id })
+            .subtracting([playingID].compactMap { $0 })
+        guard !removed.isEmpty else { return }
+        queue.removeAll { removed.contains($0.id) }
+        orderedQueue.removeAll { removed.contains($0.id) }
+        queueIndex = queue.firstIndex { $0.id == playingID } ?? 0
     }
 
     // MARK: - Shuffle / repeat
@@ -112,21 +188,20 @@ final class PlaybackController: NSObject, ObservableObject {
     func toggleShuffle() {
         isShuffled.toggle()
         guard !queue.isEmpty else { return }
-        let playing = currentSong
+        let playingID = currentEntryID
 
         if isShuffled {
             var rest = orderedQueue
-            if let playing, let position = rest.firstIndex(of: playing) {
-                rest.remove(at: position)
+            if let position = rest.firstIndex(where: { $0.id == playingID }) {
+                let playing = rest.remove(at: position)
                 queue = [playing] + rest.shuffled()
-                queueIndex = 0
             } else {
                 queue = rest.shuffled()
-                queueIndex = 0
             }
+            queueIndex = 0
         } else {
             queue = orderedQueue
-            queueIndex = playing.flatMap { queue.firstIndex(of: $0) } ?? 0
+            queueIndex = queue.firstIndex { $0.id == playingID } ?? 0
         }
     }
 
@@ -161,7 +236,7 @@ final class PlaybackController: NSObject, ObservableObject {
             stop()
             return
         }
-        load(queue[queueIndex], autoPlay: true)
+        load(queue[queueIndex].song, autoPlay: true)
     }
 
     func previous() {
@@ -178,7 +253,7 @@ final class PlaybackController: NSObject, ObservableObject {
             seek(to: 0)
             return
         }
-        load(queue[queueIndex], autoPlay: true)
+        load(queue[queueIndex].song, autoPlay: true)
     }
 
     /// Natural end of a track — this is where repeat-one applies.
@@ -217,11 +292,12 @@ final class PlaybackController: NSObject, ObservableObject {
             stop()
             return
         }
-        // Keep queueIndex pointing at the same song after the removal.
-        let playing = currentSong
-        queue.removeAll { $0.id == song.id }
-        orderedQueue.removeAll { $0.id == song.id }
-        queueIndex = playing.flatMap { queue.firstIndex(of: $0) } ?? 0
+        // Every copy goes, since the file itself is gone. Keep queueIndex on the
+        // entry that is playing.
+        let playingID = currentEntryID
+        queue.removeAll { $0.song.id == song.id }
+        orderedQueue.removeAll { $0.song.id == song.id }
+        queueIndex = queue.firstIndex { $0.id == playingID } ?? 0
     }
 
     // MARK: - Loading
@@ -232,7 +308,7 @@ final class PlaybackController: NSObject, ObservableObject {
             // File is gone or unreadable — skip past it rather than stalling the queue.
             if queueIndex + 1 < queue.count {
                 queueIndex += 1
-                load(queue[queueIndex], autoPlay: autoPlay)
+                load(queue[queueIndex].song, autoPlay: autoPlay)
             } else {
                 stop()
             }

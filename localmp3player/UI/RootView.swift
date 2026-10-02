@@ -67,6 +67,9 @@ struct RootView: View {
                 pane(.tags) { TagsView(popToRoot: popSignal[.tags, default: 0]) }
                 pane(.settings) { SettingsView(path: $settingsPath) }
             }
+            // Above the panes and just over the bottom bar, so a queue
+            // confirmation is visible from any tab.
+            .overlay(alignment: .bottom) { QueueNoticeToast() }
             BottomBar(
                 tab: $tab,
                 onReselect: reselect,

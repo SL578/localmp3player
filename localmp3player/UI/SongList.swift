@@ -114,6 +114,13 @@ struct SongListContent: View {
                             )
                         }
                         .tint(theme.liked)
+                        // Like stays first, so a full swipe still likes the song.
+                        ForEach(QueueAction.allCases) { action in
+                            Button { action.perform([song], on: playback) } label: {
+                                Label(action.title, systemImage: action.systemImage)
+                            }
+                            .tint(action.tint)
+                        }
                     }
                     .swipeActions(edge: .trailing) {
                         trailingActions(for: song)

@@ -61,29 +61,29 @@ struct NowPlayingView: View {
     @EnvironmentObject private var playback: PlaybackController
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
+        // A `List` rather than a `ScrollView` so Up Next can be edited in place:
+        // long-press a row to drag it, swipe it to take it out. The player
+        // itself is a handful of rows above the queue, separators hidden, so it
+        // still reads as one screen rather than a table.
+        List {
+            playerRow {
                 ArtworkThumbnail(data: playback.currentSong?.artworkData, size: 260)
                     .modeShadow(uiMode, radius: 12)
-
-                trackLabels
-                progress
-                transportControls
-                secondaryControls
-
-                if !playback.queue.isEmpty {
-                    Divider().padding(.top, 4)
-                    queueSection
-                }
             }
-            .padding()
+            playerRow { trackLabels }
+            playerRow { progress }
+            playerRow { transportControls }
+            playerRow { secondaryControls }
+
+            if !playback.queue.isEmpty {
+                queueHeader
+                queueRows
+            }
         }
-        // A pushed navigation destination is its own view controller with its own
-        // default background — it doesn't inherit RootView's. Every other screen
-        // gets this from `themedScrollBackground` on its List/Form; this one has
-        // neither, so it needs the background and text colour set directly.
-        .background(theme.background)
-        .foregroundStyle(theme.primaryText)
+        .listStyle(.plain)
+        // A presented navigation stack has its own default background — it
+        // doesn't inherit RootView's — so the list states the theme's itself.
+        .themedScrollBackground(theme)
         .navigationTitle("Now Playing")
         .navigationBarTitleDisplayMode(.inline)
         .modeNavigationChrome(uiMode, theme: theme)
@@ -92,6 +92,16 @@ struct NowPlayingView: View {
                 ToolbarGlyph("Close player", systemImage: "chevron.left") { dismiss() }
             }
         }
+    }
+
+    /// One piece of the player as a list row: centred, on the themed background,
+    /// with no separator, so the rows above Up Next don't look like rows.
+    private func playerRow<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .frame(maxWidth: .infinity)
+            .listRowSeparator(.hidden)
+            .listRowBackground(theme.background)
+            .listRowInsets(EdgeInsets(top: 10, leading: 20, bottom: 10, trailing: 20))
     }
 
     // MARK: - Pieces
@@ -176,55 +186,104 @@ struct NowPlayingView: View {
         .modeAnimation(uiMode, value: playback.isShuffled)
     }
 
-    private var queueSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Up Next")
-                    .font(.headline)
-                Spacer()
-                Text("\(playback.queue.count) songs")
+    /// A row rather than a section header: a plain list pins its headers and
+    /// gives them a background of their own, which the player doesn't want.
+    private var queueHeader: some View {
+        UpNextHeader(
+            clock: playback.clock,
+            count: playback.queue.count,
+            duration: playback.duration,
+            upcomingSeconds: playback.queue.dropFirst(playback.queueIndex + 1).map(\.song).totalDuration
+        )
+        .padding(.top, 8)
+        .listRowBackground(theme.background)
+    }
+
+    private var queueRows: some View {
+        ForEach(Array(playback.queue.enumerated()), id: \.element.id) { index, entry in
+            let isCurrent = entry.id == playback.currentEntryID
+            QueueRow(song: entry.song, position: index + 1, isCurrent: isCurrent, isPlaying: playback.isPlaying)
+                .foregroundStyle(isCurrent ? theme.accent : theme.primaryText)
+                .listRowBackground(theme.background)
+                .contentShape(Rectangle())
+                .onTapGesture { playback.jump(to: index) }
+                // Takes the row out of the queue and nothing else, so it keeps
+                // the role, and comes out blue like every other detach.
+                .swipeActions(edge: .trailing) {
+                    if !isCurrent {
+                        Button(role: .destructive) {
+                            playback.removeFromQueue(atOffsets: IndexSet(integer: index))
+                        } label: {
+                            Label("Remove", systemImage: "minus.circle")
+                        }
+                    }
+                }
+        }
+        .onMove { playback.moveInQueue(fromOffsets: $0, toOffset: $1) }
+    }
+}
+
+/// One song in Up Next.
+private struct QueueRow: View {
+    let song: Song
+    let position: Int
+    let isCurrent: Bool
+    let isPlaying: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if isCurrent {
+                Image(systemName: isPlaying ? "speaker.wave.2.fill" : "speaker.fill")
+                    .font(.caption)
+                    .foregroundStyle(.tint)
+                    .frame(width: 22)
+                    .instantSymbolSwap(value: isPlaying)
+            } else {
+                Text("\(position)")
+                    .font(.caption.monospacedDigit())
+                    .secondaryText()
+                    .frame(width: 22)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(song.title)
+                    .lineLimit(1)
+                Text(song.artist)
                     .font(.caption)
                     .secondaryText()
+                    .lineLimit(1)
             }
-
-            ForEach(Array(playback.queue.enumerated()), id: \.element.id) { index, song in
-                Button {
-                    playback.jump(to: index)
-                } label: {
-                    HStack(spacing: 10) {
-                        if index == playback.queueIndex {
-                            Image(systemName: playback.isPlaying ? "speaker.wave.2.fill" : "speaker.fill")
-                                .font(.caption)
-                                .foregroundStyle(.tint)
-                                .frame(width: 16)
-                                .instantSymbolSwap(value: playback.isPlaying)
-                        } else {
-                            Text("\(index + 1)")
-                                .font(.caption.monospacedDigit())
-                                .secondaryText()
-                                .frame(width: 16)
-                        }
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(song.title)
-                                .lineLimit(1)
-                            Text(song.artist)
-                                .font(.caption)
-                                .secondaryText()
-                                .lineLimit(1)
-                        }
-                        Spacer(minLength: 4)
-                        Text(TimeFormatting.duration(song.duration))
-                            .font(.caption.monospacedDigit())
-                            .secondaryText()
-                    }
-                    .padding(.vertical, 6)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(index == playback.queueIndex ? theme.accent : theme.primaryText)
-                Divider()
-            }
+            Spacer(minLength: 4)
+            Text(TimeFormatting.duration(song.duration))
+                .font(.caption.monospacedDigit())
+                .secondaryText()
         }
+        .padding(.vertical, 2)
+    }
+}
+
+/// "Up Next — 12 songs · 31 min left". The time left counts down with the song,
+/// so this observes the clock in its own small view, the way the scrub bar
+/// does; read in the player's body instead and the whole screen — queue
+/// included — would rebuild every second.
+private struct UpNextHeader: View {
+    @ObservedObject var clock: PlaybackClock
+    let count: Int
+    let duration: Double
+    let upcomingSeconds: Double
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("Up Next")
+                .font(.headline)
+            Spacer()
+            Text("\(count) song\(count == 1 ? "" : "s") · \(TimeFormatting.totalLength(remaining)) left")
+                .font(.caption)
+                .secondaryText()
+        }
+    }
+
+    private var remaining: Double {
+        upcomingSeconds + max(duration - clock.currentTime, 0)
     }
 }
 

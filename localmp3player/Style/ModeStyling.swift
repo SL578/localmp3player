@@ -75,6 +75,18 @@ extension View {
         }
     }
 
+    /// A floating capsule over content, like the queue confirmation. Regular
+    /// rather than `modeCard`'s thin material: a toast sits over moving text, and
+    /// the thin one let the row behind it read through the words.
+    @ViewBuilder
+    func modeCapsule(_ mode: UIMode, theme: AppTheme) -> some View {
+        if mode.usesMaterials {
+            background(.regularMaterial, in: Capsule())
+        } else {
+            background(theme.surface, in: Capsule())
+        }
+    }
+
     /// Shadows are pure compositing cost, so Performance mode drops them entirely.
     @ViewBuilder
     func modeShadow(_ mode: UIMode, radius: CGFloat) -> some View {

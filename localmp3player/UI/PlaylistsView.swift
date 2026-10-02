@@ -474,6 +474,13 @@ struct PlaylistDetailView: View {
                                 )
                             }
                             .tint(theme.liked)
+                            // Like stays first, so a full swipe still likes the song.
+                            ForEach(QueueAction.allCases) { action in
+                                Button { action.perform([song], on: playback) } label: {
+                                    Label(action.title, systemImage: action.systemImage)
+                                }
+                                .tint(action.tint)
+                            }
                         }
                         .swipeActions(edge: .trailing) {
                             // Removes the song from this playlist rather than from
@@ -600,6 +607,11 @@ struct PlaylistDetailView: View {
     private var selectionBar: some View {
         let liked = selectedSongs().allLiked
         return SelectionBar(count: selection.count) {
+            // Every selected row, duplicates included and in running order:
+            // queueing both copies of a song is what picking both rows means.
+            QueueSelectionMenu(songs: { playlist.orderedEntries.filter { selection.contains($0.id) }.compactMap(\.song) }) {
+                endSelection()
+            }
             SelectionAction("Add to Playlist", systemImage: "text.badge.plus") { showingPlaylistPicker = true }
             SelectionAction(liked ? "Unlike" : "Like", systemImage: liked ? "heart.slash" : "heart") {
                 selectedSongs().setLiked(!liked)
@@ -660,9 +672,9 @@ struct PlaylistDetailView: View {
     }
 
     private func move(from offsets: IndexSet, to destination: Int) {
-        var songs = playlist.songs
-        songs.move(fromOffsets: offsets, toOffset: destination)
-        playlist.reorder(to: songs)
+        var entries = playlist.orderedEntries
+        entries.move(fromOffsets: offsets, toOffset: destination)
+        playlist.reorder(entries: entries)
         try? context.save()
     }
 }

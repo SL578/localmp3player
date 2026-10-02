@@ -411,6 +411,7 @@ struct TagDetailView: View {
     private var selectionBar: some View {
         let liked = selectedSongs().allLiked
         return SelectionBar(count: selection.count) {
+            QueueSelectionMenu(songs: selectedSongs) { endSelection() }
             SelectionAction("Add to Playlist", systemImage: "text.badge.plus") { showingPlaylistPicker = true }
             SelectionAction(liked ? "Unlike" : "Like", systemImage: liked ? "heart.slash" : "heart") {
                 selectedSongs().setLiked(!liked)
