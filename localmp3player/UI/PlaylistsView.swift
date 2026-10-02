@@ -369,7 +369,9 @@ struct PlaylistEditor: View {
 
 struct SmartPlaylistRow: View {
     @Environment(\.theme) private var theme
+    @Environment(\.managedObjectContext) private var context
     @ObservedObject var playlist: SmartPlaylist
+    @State private var lengthSummary = ""
 
     var body: some View {
         HStack(spacing: 12) {
@@ -384,8 +386,27 @@ struct SmartPlaylistRow: View {
                 Text(playlist.ruleSummary)
                     .font(.caption)
                     .secondaryText()
+                Text(lengthSummary)
+                    .font(.caption)
+                    .secondaryText()
             }
         }
+        // A rule's matches change with the library, not with the playlist this
+        // row observes, so the count is re-asked on every save — the same signal
+        // `SmartPlaylistDetailView` refreshes on — and whenever the rule changes.
+        .task(id: playlist.ruleData) { refreshLength() }
+        .onReceive(NotificationCenter.default.publisher(for: .NSManagedObjectContextDidSave, object: context)) { _ in
+            refreshLength()
+        }
+    }
+
+    private func refreshLength() {
+        let summary = SmartPlaylistEngine.summary(for: playlist.rule, in: context)
+        lengthSummary = TimeFormatting.songSummary(
+            count: summary.count,
+            seconds: summary.seconds,
+            approximate: summary.approximate
+        )
     }
 }
 
@@ -403,7 +424,7 @@ struct PlaylistRow: View {
                 .foregroundStyle(playlist.tint(theme))
             VStack(alignment: .leading, spacing: 2) {
                 Text(playlist.name)
-                Text("\(playlist.entries.count) songs")
+                Text(TimeFormatting.songSummary(count: playlist.entries.count, seconds: playlist.songs.totalDuration))
                     .font(.caption)
                     .secondaryText()
             }
@@ -433,6 +454,9 @@ struct PlaylistDetailView: View {
 
     var body: some View {
         List {
+            if !playlist.entries.isEmpty {
+                ListSummaryRow(count: playlist.entries.count, seconds: playlist.songs.totalDuration)
+            }
             ForEach(playlist.orderedEntries) { entry in
                 if let song = entry.song {
                     SongRow(song: song, isSelected: selection.contains(entry.id), isSelecting: isEditing)
@@ -661,7 +685,8 @@ struct SmartPlaylistDetailView: View {
             songs: matches,
             selection: $selection,
             isSelecting: false,
-            sourceName: playlist.name
+            sourceName: playlist.name,
+            showsSummary: true
         )
         .navigationTitle(playlist.name)
         // Large, matching a playlist's — see `TagDetailView`.

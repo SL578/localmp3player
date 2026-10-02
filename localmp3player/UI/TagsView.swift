@@ -33,7 +33,7 @@ struct TagsView: View {
                                 .frame(width: 12, height: 12)
                             Text(tag.displayName)
                             Spacer()
-                            Text("\(tag.songs.count)")
+                            Text(TimeFormatting.songSummary(count: tag.songs.count, seconds: tag.songs.totalDuration))
                                 .font(.caption)
                                 .secondaryText()
                         }
@@ -298,7 +298,8 @@ struct TagDetailView: View {
             removal: .detach(label: "Remove") { song in
                 song.removeTag(tag)
                 PersistenceController.shared.save()
-            }
+            },
+            showsSummary: true
         )
         .navigationTitle(tag.displayName)
         // Large, like a playlist's. An inline title shares the bar with the

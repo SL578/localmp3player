@@ -37,6 +37,31 @@ enum SmartPlaylistEngine {
         return min(total, rule.resultLimit ?? total)
     }
 
+    /// Song count and running time for a list row. Reads only `duration`, as
+    /// dictionaries, so a row never faults in whole songs.
+    ///
+    /// A random sample that the limit actually trims has no fixed length — the
+    /// detail screen draws a fresh one each time — so that case is the sample
+    /// size times the average match, flagged as approximate.
+    static func summary(for rule: SmartRule, in context: NSManagedObjectContext) -> (count: Int, seconds: Double, approximate: Bool) {
+        let request = NSFetchRequest<NSDictionary>(entityName: "Song")
+        request.resultType = .dictionaryResultType
+        request.propertiesToFetch = ["duration"]
+        request.predicate = predicate(for: rule)
+        request.sortDescriptors = rule.sortBy.songSort.descriptors
+        if let limit = rule.resultLimit, rule.sortBy != .random {
+            request.fetchLimit = limit
+        }
+        let durations = ((try? context.fetch(request)) ?? []).map { max($0["duration"] as? Double ?? 0, 0) }
+        let total = durations.reduce(0, +)
+
+        if rule.sortBy == .random, let limit = rule.resultLimit, durations.count > limit {
+            let average = total / Double(durations.count)
+            return (limit, average * Double(limit), true)
+        }
+        return (durations.count, total, false)
+    }
+
     // MARK: - Request
 
     private static func fetchRequest(for rule: SmartRule) -> NSFetchRequest<Song> {

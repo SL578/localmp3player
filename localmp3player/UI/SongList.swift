@@ -33,6 +33,9 @@ struct SongListContent: View {
     /// tapping the tab you are already on. Every other tab pops a pushed screen
     /// instead; the Library has no stack, so the top of the list is its root.
     let scrollToTop: Int
+    /// A "9 songs · 38 min" line above the rows. Off for the Library, which is
+    /// the whole collection rather than a list someone put together.
+    let showsSummary: Bool
 
     @State private var editing: Song?
     @State private var pendingDelete: Song?
@@ -43,7 +46,8 @@ struct SongListContent: View {
         isSelecting: Bool,
         sourceName: String,
         removal: SongRemoval = .deleteFromLibrary,
-        scrollToTop: Int = 0
+        scrollToTop: Int = 0,
+        showsSummary: Bool = false
     ) {
         _fetched = FetchRequest(fetchRequest: request, animation: nil)
         suppliedSongs = nil
@@ -52,6 +56,7 @@ struct SongListContent: View {
         self.sourceName = sourceName
         self.removal = removal
         self.scrollToTop = scrollToTop
+        self.showsSummary = showsSummary
     }
 
     init(
@@ -60,7 +65,8 @@ struct SongListContent: View {
         isSelecting: Bool,
         sourceName: String,
         removal: SongRemoval = .deleteFromLibrary,
-        scrollToTop: Int = 0
+        scrollToTop: Int = 0,
+        showsSummary: Bool = false
     ) {
         _fetched = FetchRequest(fetchRequest: LibraryQuery.noSongs(), animation: nil)
         suppliedSongs = songs
@@ -69,6 +75,7 @@ struct SongListContent: View {
         self.sourceName = sourceName
         self.removal = removal
         self.scrollToTop = scrollToTop
+        self.showsSummary = showsSummary
     }
 
     /// The songs currently on screen, which is what gets queued on tap.
@@ -90,6 +97,9 @@ struct SongListContent: View {
                 )
                 .listRowSeparator(.hidden)
                 .listRowBackground(theme.background)
+            }
+            if showsSummary && !visibleSongs.isEmpty {
+                ListSummaryRow(count: visibleSongs.count, seconds: visibleSongs.totalDuration)
             }
             ForEach(visibleSongs) { song in
                 SongRow(song: song, isSelected: selection.contains(song.id), isSelecting: isSelecting)
@@ -175,6 +185,23 @@ struct SongListContent: View {
         AudioFileStore.delete(relativePath: song.filePath)
         context.delete(song)
         try? context.save()
+    }
+}
+
+/// The "9 songs · 38 min" line at the top of a playlist, tag or smart playlist.
+/// A row rather than a section header, so it scrolls away with the list and
+/// takes the themed background instead of a header's own.
+struct ListSummaryRow: View {
+    @Environment(\.theme) private var theme
+    let count: Int
+    let seconds: Double
+
+    var body: some View {
+        Text(TimeFormatting.songSummary(count: count, seconds: seconds))
+            .font(.subheadline)
+            .secondaryText()
+            .listRowSeparator(.hidden)
+            .listRowBackground(theme.background)
     }
 }
 

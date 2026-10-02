@@ -257,4 +257,29 @@ enum TimeFormatting {
         }
         return String(format: "%d:%02d", minutes, secs)
     }
+
+    /// How long a collection runs: "47 min", "2 hr 5 min". Kept apart from
+    /// `duration`, whose `1:02:05` reads as a position in one song rather than a
+    /// span of many.
+    static func totalLength(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds > 0 else { return "0 min" }
+        // A few seconds of audio is still "1 min", not "0 min" — zero reads as empty.
+        let minutes = max(1, Int((seconds / 60).rounded()))
+        let hours = minutes / 60
+        let rest = minutes % 60
+        if hours == 0 { return "\(minutes) min" }
+        return rest == 0 ? "\(hours) hr" : "\(hours) hr \(rest) min"
+    }
+
+    /// "1 song · 3 min", "9 songs · 38 min". `approximate` marks a length that is
+    /// an estimate — a smart playlist's random sample is drawn fresh each time.
+    static func songSummary(count: Int, seconds: Double, approximate: Bool = false) -> String {
+        let songs = "\(count) song\(count == 1 ? "" : "s")"
+        return "\(songs) · \(approximate ? "~" : "")\(totalLength(seconds))"
+    }
+}
+
+extension Sequence where Element == Song {
+    /// Summed in memory: there is no stored total, so it can't drift from the songs.
+    var totalDuration: Double { reduce(0) { $0 + Swift.max($1.duration, 0) } }
 }

@@ -43,7 +43,16 @@ final class CarPlayBrowser {
         let smart = LibraryQuery.fetchAll(LibraryQuery.allSmartPlaylists(), in: context)
         if !smart.isEmpty {
             let items = smart.map { playlist in
-                let item = CPListItem(text: playlist.name, detailText: playlist.ruleSummary)
+                // Count and length rather than the rule summary the phone row
+                // leads with: picking something to play while driving is a
+                // question of "how much", not "how is it built".
+                let summary = SmartPlaylistEngine.summary(for: playlist.rule, in: context)
+                let detail = TimeFormatting.songSummary(
+                    count: summary.count,
+                    seconds: summary.seconds,
+                    approximate: summary.approximate
+                )
+                let item = CPListItem(text: playlist.name, detailText: detail)
                 item.accessoryType = .disclosureIndicator
                 item.handler = { [weak self] _, completion in
                     guard let self else { completion(); return }
@@ -58,7 +67,10 @@ final class CarPlayBrowser {
         let manual = LibraryQuery.fetchAll(LibraryQuery.allPlaylists(), in: context)
         if !manual.isEmpty {
             let items = manual.map { playlist in
-                let item = CPListItem(text: playlist.name, detailText: "\(playlist.entries.count) songs")
+                let item = CPListItem(text: playlist.name, detailText: TimeFormatting.songSummary(
+                    count: playlist.entries.count,
+                    seconds: playlist.songs.totalDuration
+                ))
                 item.accessoryType = .disclosureIndicator
                 item.handler = { [weak self] _, completion in
                     self?.pushSongList(playlist.songs, title: playlist.name, completion: completion)
@@ -80,7 +92,10 @@ final class CarPlayBrowser {
     private func makeTagsTemplate() -> CPListTemplate {
         let tags = LibraryQuery.fetchAll(LibraryQuery.allTags(), in: context)
         let items = tags.prefix(Self.maxItemsPerList).map { tag in
-            let item = CPListItem(text: tag.displayName, detailText: "\(tag.songs.count) songs")
+            let item = CPListItem(text: tag.displayName, detailText: TimeFormatting.songSummary(
+                count: tag.songs.count,
+                seconds: tag.songs.totalDuration
+            ))
             item.accessoryType = .disclosureIndicator
             item.handler = { [weak self] _, completion in
                 guard let self else { completion(); return }
