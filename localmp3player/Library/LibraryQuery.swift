@@ -59,6 +59,15 @@ enum LibraryQuery {
         return request
     }
 
+    /// Songs carrying at least one tag — what tag suggestions learn from.
+    static func taggedSongs() -> NSFetchRequest<Song> {
+        let request = Song.fetchRequest()
+        request.predicate = NSPredicate(format: "tags.@count > 0")
+        request.sortDescriptors = SongSort.title.descriptors
+        request.relationshipKeyPathsForPrefetching = ["tags"]
+        return request
+    }
+
     static func allTags() -> NSFetchRequest<Tag> {
         let request = Tag.fetchRequest()
         request.sortDescriptors = [NSSortDescriptor(key: "displayName", ascending: true, selector: #selector(NSString.localizedStandardCompare(_:)))]

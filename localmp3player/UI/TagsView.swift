@@ -596,6 +596,18 @@ struct BatchTagEditor: View {
     var body: some View {
         NavigationStack {
             List {
+                if !tags.isEmpty {
+                    Section {
+                        NavigationLink {
+                            TagSuggestionReview(songIDs: songIDs)
+                        } label: {
+                            Label("Suggest Tags for Each Song", systemImage: "sparkles")
+                        }
+                    } footer: {
+                        Text(TagSuggestionCopy.sources)
+                    }
+                    .listRowBackground(theme.surface)
+                }
                 Section {
                     HStack {
                         TextField("New tag", text: $newTagName)

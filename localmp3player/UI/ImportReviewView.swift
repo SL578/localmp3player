@@ -7,23 +7,41 @@ struct ImportReviewView: View {
     @Environment(\.theme) private var theme
     @EnvironmentObject private var coordinator: ImportCoordinator
     @State private var isCommitting = false
+    @State private var editingID: ImportDraft.ID?
 
     var body: some View {
         NavigationStack {
             List {
+                if coordinator.isSuggesting || coordinator.openSuggestionCount > 0 {
+                    suggestionSection
+                }
                 Section {
-                    ForEach($coordinator.drafts) { $draft in
-                        NavigationLink {
-                            ImportDraftEditor(draft: $draft)
-                        } label: {
+                    ForEach(coordinator.drafts) { draft in
+                        // Pushed by tap rather than wrapped in a NavigationLink:
+                        // a link claims the whole row, and the suggestion chips
+                        // inside it need their own taps.
+                        HStack {
                             DraftSummaryRow(draft: draft)
+                            Spacer(minLength: 4)
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .tertiaryText()
                         }
+                        .contentShape(Rectangle())
+                        .onTapGesture { editingID = draft.id }
+                        .accessibilityElement(children: .contain)
+                        .accessibilityAction(named: "Edit") { editingID = draft.id }
                     }
                     .onDelete { coordinator.removeDrafts(atOffsets: $0) }
                 } footer: {
                     Text("Titles and artists come from the file's own tags where it has them, and from the filename otherwise. Tags written by a video downloader are tidied up first. Tap any row to correct it.")
                 }
                 .listRowBackground(theme.surface)
+            }
+            .navigationDestination(item: $editingID) { id in
+                if let index = coordinator.drafts.firstIndex(where: { $0.id == id }) {
+                    ImportDraftEditor(draft: $coordinator.drafts[index])
+                }
             }
             .themedScrollBackground(theme)
             .navigationTitle("Review Import")
@@ -59,12 +77,32 @@ struct ImportReviewView: View {
         .interactiveDismissDisabled()
     }
 
+    private var suggestionSection: some View {
+        Section {
+            if coordinator.openSuggestionCount > 0 {
+                Button("Add All Suggested Tags") { coordinator.acceptAllSuggestions() }
+                    .accentAction(theme)
+            }
+            if coordinator.isSuggesting {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Suggesting tags")
+                        .secondaryText()
+                }
+            }
+        } footer: {
+            Text("\(TagSuggestionCopy.sources) Tap a suggested tag to add it.")
+        }
+        .listRowBackground(theme.surface)
+    }
+
     private var duplicateBinding: Binding<Bool> {
         Binding(get: { coordinator.pendingDuplicate != nil }, set: { _ in })
     }
 }
 
 private struct DraftSummaryRow: View {
+    @EnvironmentObject private var coordinator: ImportCoordinator
     let draft: ImportDraft
 
     var body: some View {
@@ -86,6 +124,14 @@ private struct DraftSummaryRow: View {
                             .tertiaryText()
                     }
                 }
+                if let suggested = coordinator.suggestions[draft.id], !suggested.isEmpty {
+                    SuggestedTagChips(
+                        names: suggested,
+                        isAccepted: draft.hasTag,
+                        toggle: { coordinator.toggleSuggestion($0, for: draft.id) }
+                    )
+                    .padding(.top, 2)
+                }
             }
         }
     }
@@ -98,6 +144,7 @@ struct ImportDraftEditor: View {
     @Environment(\.uiMode) private var uiMode
     @FetchRequest(fetchRequest: LibraryQuery.allTags()) private var existingTags: FetchedResults<Tag>
 
+    @EnvironmentObject private var coordinator: ImportCoordinator
     @Binding var draft: ImportDraft
     @State private var edited: ImportDraft
     @State private var tagInput = ""
@@ -141,6 +188,14 @@ struct ImportDraftEditor: View {
                     }
                 }
                 .onDelete { edited.tagNames.remove(atOffsets: $0) }
+
+                if let suggested = coordinator.suggestions[edited.id], !suggested.isEmpty {
+                    SuggestedTagChips(
+                        names: suggested,
+                        isAccepted: edited.hasTag,
+                        toggle: { edited.toggleTag($0) }
+                    )
+                }
 
                 if !unusedTags.isEmpty {
                     Menu {

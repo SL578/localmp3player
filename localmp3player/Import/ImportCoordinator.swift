@@ -40,6 +40,19 @@ struct ImportDraft: Identifiable {
     }
 
     var normalizedKey: String { NormalizedKey.make(title: title, artist: artist) }
+
+    /// Case-insensitive, matching how `Tag.findOrCreate` treats names.
+    func hasTag(_ name: String) -> Bool {
+        tagNames.contains { $0.caseInsensitiveCompare(name) == .orderedSame }
+    }
+
+    mutating func toggleTag(_ name: String) {
+        if hasTag(name) {
+            tagNames.removeAll { $0.caseInsensitiveCompare(name) == .orderedSame }
+        } else {
+            tagNames.append(name)
+        }
+    }
 }
 
 struct DuplicateDecision {
@@ -62,6 +75,12 @@ final class ImportCoordinator: ObservableObject {
     @Published var drafts: [ImportDraft] = []
     @Published var pendingDuplicate: (draft: ImportDraft, existing: Song)?
     @Published var lastImportSummary: String?
+    /// Tags suggested for each draft, from `TagSuggester`. Kept apart from the
+    /// drafts so a suggestion is never applied by being there: accepting one
+    /// copies it into the draft's `tagNames`. A missing key means not asked yet.
+    @Published private(set) var suggestions: [ImportDraft.ID: [String]] = [:]
+    @Published private(set) var isSuggesting = false
+    private var suggestionTask: Task<Void, Never>?
     /// Files the picker handed over that could not be copied into app storage.
     private var stagingFailureCount = 0
 
@@ -87,6 +106,7 @@ final class ImportCoordinator: ObservableObject {
         batchKeepAll = false
         discardAllStaged()
         drafts = []
+        stopSuggesting()
         stagingFailureCount = 0
         await addToStaging(urls)
     }
@@ -167,6 +187,7 @@ final class ImportCoordinator: ObservableObject {
         drafts += staged
         stagingFailureCount += failed
         phase = drafts.isEmpty ? .idle : .reviewing
+        if !staged.isEmpty { suggestTags() }
         if drafts.isEmpty, stagingFailureCount > 0 {
             let count = stagingFailureCount
             lastImportSummary = "Couldn\u{2019}t read \(count) file\(count == 1 ? "" : "s")"
@@ -230,6 +251,7 @@ final class ImportCoordinator: ObservableObject {
         batchReplaceAll = false
         batchKeepAll = false
         drafts = []
+        stopSuggesting()
         stagingFailureCount = 0
         phase = .idle
     }
@@ -242,6 +264,76 @@ final class ImportCoordinator: ObservableObject {
         drafts.remove(atOffsets: offsets)
     }
 
+    // MARK: - Suggested tags
+
+    /// Asks for suggestions for every draft that doesn't have them yet, one at
+    /// a time in the background. Results fill into the review sheet as they
+    /// arrive; the sheet never waits on them.
+    ///
+    /// A second share joining the sheet restarts the run rather than queueing
+    /// behind it — drafts already answered are skipped, so nothing is asked twice.
+    private func suggestTags() {
+        suggestionTask?.cancel()
+        let suggester = TagSuggester(context: context)
+        let pending = drafts.map(\.id).filter { suggestions[$0] == nil }
+        guard suggester.hasTags, !pending.isEmpty else {
+            isSuggesting = false
+            return
+        }
+
+        isSuggesting = true
+        let autoSelect = AppSettings.autoSelectsSuggestedTags
+        suggestionTask = Task { [weak self] in
+            for id in pending {
+                guard let self, !Task.isCancelled else { return }
+                // Read fresh each time: the draft may have been edited or
+                // removed while earlier ones were being answered.
+                guard let draft = drafts.first(where: { $0.id == id }) else { continue }
+                let names = await suggester.suggest(for: SongFacts(
+                    title: draft.title,
+                    artist: draft.artist,
+                    album: draft.album,
+                    tagNames: draft.tagNames
+                ))
+                guard !Task.isCancelled else { return }
+                suggestions[id] = names
+                if autoSelect, let index = drafts.firstIndex(where: { $0.id == id }) {
+                    for name in names where !drafts[index].hasTag(name) {
+                        drafts[index].tagNames.append(name)
+                    }
+                }
+            }
+            self?.isSuggesting = false
+        }
+    }
+
+    private func stopSuggesting() {
+        suggestionTask?.cancel()
+        suggestionTask = nil
+        suggestions = [:]
+        isSuggesting = false
+    }
+
+    func toggleSuggestion(_ name: String, for id: ImportDraft.ID) {
+        guard let index = drafts.firstIndex(where: { $0.id == id }) else { return }
+        drafts[index].toggleTag(name)
+    }
+
+    /// Suggestions shown but not yet taken, across every draft.
+    var openSuggestionCount: Int {
+        drafts.reduce(0) { total, draft in
+            total + (suggestions[draft.id] ?? []).filter { !draft.hasTag($0) }.count
+        }
+    }
+
+    func acceptAllSuggestions() {
+        for index in drafts.indices {
+            for name in suggestions[drafts[index].id] ?? [] where !drafts[index].hasTag(name) {
+                drafts[index].tagNames.append(name)
+            }
+        }
+    }
+
     private func discardAllStaged() {
         for draft in drafts {
             AudioFileStore.discardStaged(draft.stagedPath)
@@ -251,6 +343,8 @@ final class ImportCoordinator: ObservableObject {
     // MARK: - Commit
 
     func commit() async {
+        // Only what's ticked by now is imported; nothing arriving later applies.
+        suggestionTask?.cancel()
         let queued = drafts
         var imported = 0
         var replaced = 0
@@ -274,6 +368,7 @@ final class ImportCoordinator: ObservableObject {
         PersistenceController.shared.save()
         discardAllStaged()
         drafts = []
+        stopSuggesting()
         phase = .idle
         batchReplaceAll = false
         batchKeepAll = false

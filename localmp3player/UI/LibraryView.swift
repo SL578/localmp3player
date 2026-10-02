@@ -75,6 +75,7 @@ struct LibraryView: View {
         }
         .sheet(isPresented: $showingBatchTags) {
             BatchTagEditor(songIDs: selection) { endSelection() }
+                .environmentObject(settings)
                 .environment(\.managedObjectContext, context)
                 .environment(\.uiMode, uiMode)
                 .themedSheet(theme)

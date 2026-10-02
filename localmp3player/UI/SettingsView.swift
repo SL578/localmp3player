@@ -69,6 +69,17 @@ struct SettingsView: View {
                 .listRowBackground(theme.surface)
 
                 Section {
+                    Toggle("Tick Suggestions Automatically", isOn: $settings.autoSelectSuggestedTags)
+                        .tint(theme.accent)
+                    LabeledContent("Apple Intelligence", value: TagSuggester.modelStatus.summary)
+                } header: {
+                    Text("Tag Suggestions")
+                } footer: {
+                    Text("Suggested tags appear when importing, and under Select ▸ Tag ▸ Suggest Tags for songs you already have. They only ever use tags you've created, and everything stays on this device. With this on, suggestions start out ticked; you can still untick them before adding.")
+                }
+                .listRowBackground(theme.surface)
+
+                Section {
                     LabeledContent("Songs", value: "\(songs.count)")
                     LabeledContent("On disk", value: storageUsed)
                 } header: {

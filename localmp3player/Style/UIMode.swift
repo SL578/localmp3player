@@ -76,6 +76,7 @@ final class AppSettings: ObservableObject {
     private enum Keys {
         static let uiMode = "uiMode"
         static let songSort = "songSort"
+        static let autoSelectSuggestedTags = "autoSelectSuggestedTags"
     }
 
     @Published var uiMode: UIMode {
@@ -86,10 +87,22 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(songSort.rawValue, forKey: Keys.songSort) }
     }
 
+    /// Off by default: suggested tags are shown but left unticked, so nothing is
+    /// tagged unless the user picks it.
+    @Published var autoSelectSuggestedTags: Bool {
+        didSet { UserDefaults.standard.set(autoSelectSuggestedTags, forKey: Keys.autoSelectSuggestedTags) }
+    }
+
+    /// For code with no `AppSettings` in reach, such as `ImportCoordinator`.
+    static var autoSelectsSuggestedTags: Bool {
+        UserDefaults.standard.bool(forKey: Keys.autoSelectSuggestedTags)
+    }
+
     init() {
         let storedMode = UserDefaults.standard.string(forKey: Keys.uiMode)
         uiMode = storedMode.flatMap(UIMode.init(rawValue:)) ?? .standard
         let storedSort = UserDefaults.standard.string(forKey: Keys.songSort)
         songSort = storedSort.flatMap(SongSort.init(rawValue:)) ?? .title
+        autoSelectSuggestedTags = UserDefaults.standard.bool(forKey: Keys.autoSelectSuggestedTags)
     }
 }

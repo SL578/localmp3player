@@ -14,7 +14,7 @@ files.
 An offline iOS music player for mp3 files the user imports themselves — no
 backend, accounts, network calls, or IAP. Swift + SwiftUI, Core Data,
 AVFoundation, CarPlay. iOS 17.0 target, Swift 5 language mode, built with
-Xcode 26 / iOS 26 SDK. The original spec is `docs/localmp3playerPrompt.md`.
+Xcode 27 / iOS 27 SDK. The original spec is `docs/localmp3playerPrompt.md`.
 
 Run git from this directory. The parent `codingRelated` repo ignores this folder
 and always reports a clean tree.
@@ -75,6 +75,12 @@ order) and `queue` (play order), so shuffle can be undone without reloading.
 The position lives on a separate `PlaybackClock`, held as a plain `let` so the
 1 Hz tick doesn't republish the controller and rebuild every screen. Only small
 views that draw the time should observe the clock.
+
+**Tag suggestions** — `Library/TagSuggester` suggests existing tags from artist
+history plus the on-device Foundation Models model (iOS 26+, weak-linked, gated
+by `#available`). It only suggests; nothing is applied until the user ticks it.
+The iOS 26.5 simulator can't run the model — test on the iOS 27 simulator or a
+device (see the handoff).
 
 **Import** — three entry points feed `ImportCoordinator`: the document picker,
 Files ▸ Open With (`onOpenURL` / `SceneDelegate`), and the Share Extension,
